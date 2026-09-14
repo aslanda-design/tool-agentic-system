@@ -1,0 +1,31 @@
+# --- Secrets & credentials (never commit) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# --- Local data (financial data stays local) ---
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Python ---
+backend/.venv/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# --- Node / frontend ---
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# --- Editors / OS ---
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
