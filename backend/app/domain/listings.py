@@ -73,6 +73,20 @@ class ListingInfo:
     avg_volume: Decimal | None
 
 
+def resolved_display_name(info: ListingInfo | None, symbol: str) -> str | None:
+    """The asset's new display name once `symbol` is applied as its
+    listing — Yahoo's own name for it, preferred over whatever the broker
+    called it (often an ISIN or an internal code). yfinance_adapter's
+    get_listing_info falls back to the bare symbol when Yahoo's `.info`
+    lookup fails, so `info.name == symbol` means "no real name available";
+    callers pass None through to AssetRepo.apply_listing in that case,
+    which leaves the asset's existing name untouched rather than
+    replacing it with something less readable than what it already had."""
+    if info is None or not info.name or info.name == symbol:
+        return None
+    return info.name
+
+
 @dataclass(slots=True)
 class Candidate:
     """One candidate listing for a resolution, from generation through

@@ -1,0 +1,104 @@
+{
+  "id": "same_currency_tie_eunl_vs_iwda",
+  "resolution": {
+    "id": 9002,
+    "asset_id": 9002,
+    "context": {
+      "asset_id": 9002,
+      "isin": "IE00B4L5Y983",
+      "broker_symbol": "MSCI WORLD",
+      "broker_name": "iShares Core MSCI World UCITS ETF",
+      "broker_exchange": null,
+      "broker_mic": null,
+      "currency": "EUR",
+      "broker_key": "myinvestor"
+    },
+    "status": "NEEDS_AGENT",
+    "decided_by": null,
+    "note": "No broker exchange given (fund platform import) — two same-currency candidates, rules couldn't separate them confidently.",
+    "scorer_version": "rules-v1",
+    "candidates": [
+      {
+        "id": 601,
+        "symbol": "EUNL.DE",
+        "found_by": ["openfigi", "yahoo_isin"],
+        "info": {
+          "symbol": "EUNL.DE",
+          "name": "iShares Core MSCI World UCITS ETF",
+          "currency": "EUR",
+          "quote_type": "ETF",
+          "last_close": 98.55,
+          "last_trade_date": "2026-09-11",
+          "avg_volume": 300000
+        },
+        "mic": "XETR",
+        "asset_class": "ETF",
+        "features": {
+          "has_recent_price": true,
+          "isin_confirmed": true,
+          "currency_match": true,
+          "exchange_match": 0.5,
+          "symbol_match": false,
+          "name_similarity": 0.9,
+          "most_liquid": true,
+          "source_count": 2,
+          "days_since_trade": 3
+        },
+        "score": 68
+      },
+      {
+        "id": 602,
+        "symbol": "IWDA.AS",
+        "found_by": ["openfigi"],
+        "info": {
+          "symbol": "IWDA.AS",
+          "name": "iShares Core MSCI World UCITS ETF",
+          "currency": "EUR",
+          "quote_type": "ETF",
+          "last_close": 101.2,
+          "last_trade_date": "2026-09-11",
+          "avg_volume": 60000
+        },
+        "mic": "XAMS",
+        "asset_class": "ETF",
+        "features": {
+          "has_recent_price": true,
+          "isin_confirmed": true,
+          "currency_match": true,
+          "exchange_match": 0.5,
+          "symbol_match": false,
+          "name_similarity": 0.9,
+          "most_liquid": false,
+          "source_count": 1,
+          "days_since_trade": 3
+        },
+        "score": 55
+      }
+    ],
+    "selected_candidate_id": null
+  },
+  "tool_fixtures": {
+    "validate_listing": {
+      "EUNL.DE": {
+        "symbol": "EUNL.DE",
+        "name": "iShares Core MSCI World UCITS ETF",
+        "currency": "EUR",
+        "quote_type": "ETF",
+        "last_close": 98.55,
+        "last_trade_date": "2026-09-11",
+        "avg_volume": 300000
+      },
+      "IWDA.AS": {
+        "symbol": "IWDA.AS",
+        "name": "iShares Core MSCI World UCITS ETF",
+        "currency": "EUR",
+        "quote_type": "ETF",
+        "last_close": 101.2,
+        "last_trade_date": "2026-09-11",
+        "avg_volume": 60000
+      }
+    }
+  },
+  "expected": { "final_tool": "save_security_mapping", "symbol": "EUNL.DE" },
+  "tags": ["same_currency_tie"]
+}

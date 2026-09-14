@@ -1,0 +1,104 @@
+{
+  "id": "primary_vs_secondary_listing",
+  "resolution": {
+    "id": 9006,
+    "asset_id": 9006,
+    "context": {
+      "asset_id": 9006,
+      "isin": "ES0144580Y14",
+      "broker_symbol": "IBE",
+      "broker_name": "Iberdrola",
+      "broker_exchange": "SMFE",
+      "broker_mic": "XMAD",
+      "currency": "EUR",
+      "broker_key": "interactive_brokers"
+    },
+    "status": "NEEDS_AGENT",
+    "decided_by": null,
+    "note": "Primary (Madrid) and a German secondary listing both confirmed by ISIN — same currency, rules couldn't separate them confidently.",
+    "scorer_version": "rules-v1",
+    "candidates": [
+      {
+        "id": 801,
+        "symbol": "IBE.MC",
+        "found_by": ["openfigi", "yahoo_isin"],
+        "info": {
+          "symbol": "IBE.MC",
+          "name": "Iberdrola SA",
+          "currency": "EUR",
+          "quote_type": "EQUITY",
+          "last_close": 12.87,
+          "last_trade_date": "2026-09-11",
+          "avg_volume": 8000000
+        },
+        "mic": "XMAD",
+        "asset_class": "EQUITY",
+        "features": {
+          "has_recent_price": true,
+          "isin_confirmed": true,
+          "currency_match": true,
+          "exchange_match": 1.0,
+          "symbol_match": true,
+          "name_similarity": 1.0,
+          "most_liquid": true,
+          "source_count": 2,
+          "days_since_trade": 3
+        },
+        "score": 92
+      },
+      {
+        "id": 802,
+        "symbol": "IBE1.DE",
+        "found_by": ["openfigi"],
+        "info": {
+          "symbol": "IBE1.DE",
+          "name": "Iberdrola SA",
+          "currency": "EUR",
+          "quote_type": "EQUITY",
+          "last_close": 12.9,
+          "last_trade_date": "2026-09-11",
+          "avg_volume": 15000
+        },
+        "mic": "XETR",
+        "asset_class": "EQUITY",
+        "features": {
+          "has_recent_price": true,
+          "isin_confirmed": true,
+          "currency_match": true,
+          "exchange_match": 0.0,
+          "symbol_match": false,
+          "name_similarity": 1.0,
+          "most_liquid": false,
+          "source_count": 1,
+          "days_since_trade": 3
+        },
+        "score": 45
+      }
+    ],
+    "selected_candidate_id": null
+  },
+  "tool_fixtures": {
+    "validate_listing": {
+      "IBE.MC": {
+        "symbol": "IBE.MC",
+        "name": "Iberdrola SA",
+        "currency": "EUR",
+        "quote_type": "EQUITY",
+        "last_close": 12.87,
+        "last_trade_date": "2026-09-11",
+        "avg_volume": 8000000
+      },
+      "IBE1.DE": {
+        "symbol": "IBE1.DE",
+        "name": "Iberdrola SA",
+        "currency": "EUR",
+        "quote_type": "EQUITY",
+        "last_close": 12.9,
+        "last_trade_date": "2026-09-11",
+        "avg_volume": 15000
+      }
+    }
+  },
+  "expected": { "final_tool": "save_security_mapping", "symbol": "IBE.MC" },
+  "tags": ["primary_vs_secondary", "exchange_decides"]
+}

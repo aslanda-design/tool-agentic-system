@@ -1,0 +1,49 @@
+{
+  "id": "missing_candidate_via_search",
+  "resolution": {
+    "id": 9003,
+    "asset_id": 9003,
+    "context": {
+      "asset_id": 9003,
+      "isin": "ES0144580Y14",
+      "broker_symbol": "IBE",
+      "broker_name": "Iberdrola",
+      "broker_exchange": "SMFE",
+      "broker_mic": "XMAD",
+      "currency": "EUR",
+      "broker_key": "interactive_brokers"
+    },
+    "status": "NEEDS_AGENT",
+    "decided_by": null,
+    "note": "OpenFIGI was unavailable (rate limited) and Yahoo's ISIN search returned nothing usable — no candidates generated.",
+    "scorer_version": "rules-v1",
+    "candidates": [],
+    "selected_candidate_id": null
+  },
+  "tool_fixtures": {
+    "lookup_isin": {
+      "ES0144580Y14": null
+    },
+    "search_listings": {
+      "Iberdrola": [
+        { "symbol": "IBE.MC", "name": "Iberdrola SA", "exchange": null, "asset_class": "EQUITY", "currency": "EUR" }
+      ],
+      "IBE": [
+        { "symbol": "IBE.MC", "name": "Iberdrola SA", "exchange": null, "asset_class": "EQUITY", "currency": "EUR" }
+      ]
+    },
+    "validate_listing": {
+      "IBE.MC": {
+        "symbol": "IBE.MC",
+        "name": "Iberdrola SA",
+        "currency": "EUR",
+        "quote_type": "EQUITY",
+        "last_close": 12.87,
+        "last_trade_date": "2026-09-11",
+        "avg_volume": 8000000
+      }
+    }
+  },
+  "expected": { "final_tool": "save_security_mapping", "symbol": "IBE.MC" },
+  "tags": ["missing_candidate", "requires_search"]
+}

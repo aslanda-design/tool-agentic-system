@@ -124,14 +124,27 @@ def flag_resolution_for_review(resolution_id: int, request: FlagForReviewRequest
 
 @router.post("/{resolution_id}/agent", status_code=202)
 def request_agent_resolution(resolution_id: int, db: Session = Depends(get_db)):
-    """Queue the local-LLM agent to try resolving this resolution. The
-    agent itself doesn't exist yet — see plans/agentic_asset_mapping.md
-    Phase 6 — so this always fails for now; the endpoint exists so the
-    frontend and the eventual agent wiring can be built against a stable
-    contract ahead of time."""
+    """Run the security_resolver agent (a local LLM via Ollama — see
+    plans/agentic_asset_mapping.md Phase 6) on one resolution right now.
+    Synchronous, and can take up to AGENT_TIMEOUT_SECONDS: this is an
+    explicit, user-initiated action, never something scheduled or wired
+    into BackgroundTasks (see backend/AGENTS.md's "Security resolver"
+    section for why that distinction matters here). The agent always
+    leaves the resolution in a terminal-for-now state (RESOLVED_BY_AGENT
+    or NEEDS_REVIEW), never stuck — see SecurityResolverAgent's fallback."""
     if not settings.agent_enabled:
         raise HTTPException(status_code=409, detail="The resolution agent is not enabled (AGENT_ENABLED=false).")
     resolution = container.resolution_repo(db).get(resolution_id)
     if resolution is None:
         raise HTTPException(status_code=404, detail="Resolution not found")
-    raise HTTPException(status_code=501, detail="The resolution agent isn't implemented yet.")
+
+    result = container.build_security_resolver_agent().run(resolution_id)
+    return {
+        "agent_run": {
+            "status": result.status,
+            "steps": result.steps,
+            "final_message": result.final_message,
+            "error": result.error,
+        },
+        "resolution": container.resolution_repo(db).get(resolution_id),
+    }

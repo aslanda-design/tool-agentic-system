@@ -312,6 +312,31 @@ def test_resolve_asset_auto_accepts_and_applies_the_listing():
     assert updated.needs_mapping is False
     assert updated.currency == "EUR"
     assert updated.share_class_figi == "BBG000BLNNH6"
+    assert updated.name == "EUNL.DE name"  # Yahoo's own name, not the broker's ISIN/code
+
+
+def test_resolve_asset_keeps_existing_name_when_yahoo_has_no_real_name():
+    """get_listing_info falls back to the bare symbol as `name` when Yahoo's
+    `.info` lookup fails (see yfinance_adapter.py) — resolved_display_name
+    treats that as "no name available" so the asset's existing name (set at
+    import time, e.g. from the broker's CSV) is left alone rather than being
+    overwritten with the ticker itself."""
+    asset_repo, portfolio_repo = FakeAssetRepo(), FakePortfolioRepo()
+    asset = _setup_asset(asset_repo, portfolio_repo, name="Broker's own readable name")
+    security_master = FakeSecurityMaster(
+        {"IE00B4L5Y983": [FigiListing(ticker="EUNL", exch_code="GY", name="", security_type="ETP", share_class_figi=None)]}
+    )
+    nameless = _listing("EUNL.DE", "EUR")
+    nameless.name = "EUNL.DE"  # no real name — yfinance_adapter's fallback shape
+    market_data = FakeMarketData(
+        search_results={"IE00B4L5Y983": [AssetSearchResult(symbol="EUNL.DE", name="X", exchange=None, asset_class="ETF", currency="EUR")]},
+        listings={"EUNL.DE": nameless},
+    )
+    use_case = _use_case(security_master, market_data, asset_repo, portfolio_repo)
+
+    use_case.resolve_asset(asset.id)
+
+    assert asset_repo.get(asset.id).name == "Broker's own readable name"
 
 
 def test_resolve_asset_conflict_falls_back_to_needs_review():
@@ -439,7 +464,9 @@ def test_accept_applies_listing_and_marks_resolved_by_user():
 
     assert result.status is ResolutionStatus.RESOLVED_BY_USER
     assert result.selected_candidate_id == candidate_id
-    assert asset_repo.get(asset.id).needs_mapping is False
+    updated = asset_repo.get(asset.id)
+    assert updated.needs_mapping is False
+    assert updated.name == "A.DE name"  # Yahoo's own name for the accepted candidate
 
 
 def test_accept_by_agent_marks_resolved_by_agent():

@@ -15,7 +15,7 @@ from decimal import Decimal
 
 from app.domain.errors import ListingNotFoundError
 from app.domain.exchanges import mic_for_yahoo_symbol
-from app.domain.listings import Candidate, ResolutionStatus
+from app.domain.listings import Candidate, ResolutionStatus, resolved_display_name
 from app.domain.models import AccountSource, Asset, Transaction, TransactionType
 from app.ports.market_data import MarketDataPort
 from app.ports.repositories import AssetRepo, PortfolioRepo, ResolutionRepo
@@ -156,7 +156,9 @@ class MapAssetUseCase:
             raise ListingNotFoundError(yfinance_symbol)
 
         mic = mic_for_yahoo_symbol(yfinance_symbol)
-        self.asset_repo.apply_listing(asset_id, yfinance_symbol, info.currency, mic, None, None)
+        self.asset_repo.apply_listing(
+            asset_id, yfinance_symbol, info.currency, mic, None, None, name=resolved_display_name(info, yfinance_symbol)
+        )
 
         if self.resolution_repo is None:
             return

@@ -72,3 +72,21 @@ def test_reapplying_the_same_symbol_is_a_harmless_no_op_on_the_identifier():
 
     mappings = [v for a, v in repo.list_assets_with_scheme(IdentifierScheme.YFINANCE) if a.id == asset.id]
     assert mappings == ["VUSA.L"]
+
+
+def test_apply_listing_with_a_name_renames_the_asset():
+    repo = FakeAssetRepo()
+    asset = _make_unmapped_asset(repo)
+
+    repo.apply_listing(asset.id, "VUSA.L", "GBP", "XLON", None, None, name="Vanguard S&P 500 UCITS ETF")
+
+    assert repo.get(asset.id).name == "Vanguard S&P 500 UCITS ETF"
+
+
+def test_apply_listing_without_a_name_leaves_the_existing_one_alone():
+    repo = FakeAssetRepo()
+    asset = _make_unmapped_asset(repo)  # name == symbol == "VUSA"
+
+    repo.apply_listing(asset.id, "VUSA.L", "GBP", "XLON", None, None)
+
+    assert repo.get(asset.id).name == "VUSA"

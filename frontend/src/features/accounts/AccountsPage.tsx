@@ -229,9 +229,31 @@ function ResolutionsCard() {
   const recent = useRecentResolutions(['rules', 'agent'])
   const unmapped = useUnmappedAssets()
   const resolveNow = useResolveAssetNow()
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
+  const [bulkErrors, setBulkErrors] = useState<string[]>([])
 
   const attemptedAssetIds = new Set((needsReview.data ?? []).map((r) => r.asset_id))
   const notYetAttempted = (unmapped.data ?? []).filter((a) => !attemptedAssetIds.has(a.id))
+  const isBulkResolving = bulkProgress !== null && bulkProgress.done < bulkProgress.total
+
+  // Runs one asset at a time (not Promise.all) — OpenFIGI's free tier has a
+  // tight rate limit, and the adapter already sleeps/retries once on a 429
+  // (see security_master/openfigi_adapter.py); firing every "not yet
+  // attempted" asset at once would just pile more requests behind that
+  // single retry. A failed asset doesn't stop the rest.
+  const resolveAll = async () => {
+    const ids = notYetAttempted.map((a) => a.id)
+    setBulkErrors([])
+    setBulkProgress({ done: 0, total: ids.length })
+    for (let i = 0; i < ids.length; i++) {
+      try {
+        await resolveNow.mutateAsync(ids[i])
+      } catch (err) {
+        setBulkErrors((prev) => [...prev, (err as Error).message])
+      }
+      setBulkProgress({ done: i + 1, total: ids.length })
+    }
+  }
 
   return (
     <Card>
@@ -241,7 +263,14 @@ function ResolutionsCard() {
       <CardBody className="space-y-4">
         {notYetAttempted.length > 0 && (
           <div className="space-y-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted">Not yet attempted</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted">Not yet attempted</p>
+              <Button variant="primary" disabled={isBulkResolving} onClick={resolveAll}>
+                {isBulkResolving
+                  ? `Resolving ${bulkProgress!.done}/${bulkProgress!.total}…`
+                  : `Resolve all (${notYetAttempted.length})`}
+              </Button>
+            </div>
             {notYetAttempted.map((asset) => (
               <div key={asset.id} className="flex items-center justify-between rounded-lg border border-border p-2.5">
                 <div>
@@ -250,12 +279,19 @@ function ResolutionsCard() {
                     <div className="text-xs text-muted">{asset.isin}</div>
                   )}
                 </div>
-                <Button disabled={resolveNow.isPending} onClick={() => resolveNow.mutate(asset.id)}>
+                <Button disabled={isBulkResolving || resolveNow.isPending} onClick={() => resolveNow.mutate(asset.id)}>
                   Resolve now
                 </Button>
               </div>
             ))}
-            {resolveNow.isError && <p className="text-xs text-negative">{(resolveNow.error as Error).message}</p>}
+            {resolveNow.isError && !isBulkResolving && (
+              <p className="text-xs text-negative">{(resolveNow.error as Error).message}</p>
+            )}
+            {bulkErrors.length > 0 && (
+              <p className="text-xs text-negative">
+                {bulkErrors.length} asset(s) failed to resolve: {bulkErrors.join('; ')}
+              </p>
+            )}
           </div>
         )}
 

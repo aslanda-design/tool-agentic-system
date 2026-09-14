@@ -5,6 +5,8 @@ here; nothing else in the app decides which adapter implementation to use.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy.orm import Session
 
 from app.adapters.brokers.ibkr import IBKRAdapter
@@ -30,6 +32,11 @@ from app.application.resolve_security import ResolveSecurityUseCase
 from app.application.search_assets import SearchAssetsUseCase
 from app.application.sync_broker import SyncBrokerUseCase
 from app.config import settings
+
+if TYPE_CHECKING:
+    # Only for the annotation below — see build_security_resolver_agent's
+    # docstring for why the real import is deferred to inside the function.
+    from ai.agents.security_resolver.agent import SecurityResolverAgent
 
 BROKER_ADAPTERS = {
     "interactive_brokers": lambda: IBKRAdapter(settings.ibkr_host, settings.ibkr_port, settings.ibkr_client_id),
@@ -115,3 +122,15 @@ def build_resolve_security_use_case(db: Session) -> ResolveSecurityUseCase:
         YFinanceMarketData(),
         settings.agent_enabled,
     )
+
+
+def build_security_resolver_agent() -> SecurityResolverAgent:
+    """Stateless — opens its own DB sessions and MCP subprocess per run
+    (see ai/agents/security_resolver/agent.py), so no db/Session argument.
+    Imported lazily (not at module level, like every other adapter here):
+    ai/agents/security_resolver/agent.py itself imports from this module
+    (`build_resolve_security_use_case`, `resolution_repo`), so a top-level
+    import here would be circular — see backend/ai/AGENTS.md rule 1."""
+    from ai.agents.security_resolver.agent import SecurityResolverAgent
+
+    return SecurityResolverAgent()

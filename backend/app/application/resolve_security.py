@@ -32,6 +32,7 @@ from app.domain.listings import (
     ResolutionContext,
     ResolutionDTO,
     ResolutionStatus,
+    resolved_display_name,
 )
 from app.domain.models import AssetClass
 from app.ports.market_data import MarketDataPort
@@ -206,6 +207,7 @@ class ResolveSecurityUseCase:
                     chosen.mic,
                     AssetClass(chosen.asset_class) if chosen.asset_class else None,
                     chosen.figi.share_class_figi if chosen.figi else None,
+                    name=resolved_display_name(chosen.info, chosen.symbol),
                 )
                 decided_by = "rules"
             except AssetConflictError as exc:
@@ -264,7 +266,13 @@ class ResolveSecurityUseCase:
 
         asset_class = AssetClass(candidate.asset_class) if candidate.asset_class else None
         self.asset_repo.apply_listing(
-            resolution.asset_id, candidate.symbol, candidate.info.currency, candidate.mic, asset_class, None
+            resolution.asset_id,
+            candidate.symbol,
+            candidate.info.currency,
+            candidate.mic,
+            asset_class,
+            None,
+            name=resolved_display_name(candidate.info, candidate.symbol),
         )
         self.resolution_repo.select_candidate(resolution_id, candidate_id)
         status = ResolutionStatus.RESOLVED_BY_AGENT if decided_by == "agent" else ResolutionStatus.RESOLVED_BY_USER

@@ -1,0 +1,54 @@
+{
+  "id": "no_isin_search_and_pick",
+  "resolution": {
+    "id": 9005,
+    "asset_id": 9005,
+    "context": {
+      "asset_id": 9005,
+      "isin": null,
+      "broker_symbol": "VUSA",
+      "broker_name": "VUSA",
+      "broker_exchange": "LSEETF",
+      "broker_mic": "XLON",
+      "currency": "GBP",
+      "broker_key": "interactive_brokers"
+    },
+    "status": "NEEDS_AGENT",
+    "decided_by": null,
+    "note": "No ISIN available (IBKR live sync only, no Flex import yet) — free-text search found nothing on its own.",
+    "scorer_version": "rules-v1",
+    "candidates": [],
+    "selected_candidate_id": null
+  },
+  "tool_fixtures": {
+    "search_listings": {
+      "VUSA": [
+        { "symbol": "VUSA.L", "name": "Vanguard S&P 500 UCITS ETF", "exchange": null, "asset_class": "ETF", "currency": "GBP" },
+        { "symbol": "VUSA.DE", "name": "Vanguard S&P 500 UCITS ETF", "exchange": null, "asset_class": "ETF", "currency": "EUR" }
+      ]
+    },
+    "validate_listing": {
+      "VUSA.L": {
+        "symbol": "VUSA.L",
+        "name": "Vanguard S&P 500 UCITS ETF",
+        "currency": "GBP",
+        "quote_type": "ETF",
+        "last_close": 92.41,
+        "last_trade_date": "2026-09-11",
+        "avg_volume": 500000
+      },
+      "VUSA.DE": {
+        "symbol": "VUSA.DE",
+        "name": "Vanguard S&P 500 UCITS ETF",
+        "currency": "EUR",
+        "quote_type": "ETF",
+        "last_close": 107.02,
+        "last_trade_date": "2026-09-11",
+        "avg_volume": 20000
+      }
+    },
+    "lookup_isin": {}
+  },
+  "expected": { "final_tool": "save_security_mapping", "symbol": "VUSA.L" },
+  "tags": ["no_isin", "requires_search"]
+}

@@ -50,6 +50,18 @@ def test_apply_listing_updates_currency_exchange_and_clears_needs_mapping(db):
     assert repo.find_by_identifier(IdentifierScheme.YFINANCE, "VUSA.L").id == asset.id
 
 
+def test_apply_listing_with_a_name_renames_the_asset(db):
+    repo = SqlAssetRepo(db)
+    asset = repo.create(
+        symbol="test-apply-listing-name", name="IE00B3XXRP09", asset_class=AssetClass.EQUITY,
+        currency="EUR", needs_mapping=True,
+    )
+
+    repo.apply_listing(asset.id, "VUSA.L", "GBP", "XLON", None, None, name="Vanguard S&P 500 UCITS ETF")
+
+    assert repo.get(asset.id).name == "Vanguard S&P 500 UCITS ETF"
+
+
 def test_remapping_deletes_old_yfinance_identifier_and_stale_prices(db):
     asset_repo = SqlAssetRepo(db)
     market_data_repo = SqlMarketDataRepo(db)

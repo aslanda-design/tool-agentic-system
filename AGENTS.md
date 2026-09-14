@@ -127,8 +127,30 @@ Paper trading port is 7497, live is 7496.
       deterministic asset-mapping (OpenFIGI + rule-based scoring), scheduled
       job, `POST /api/assets/{id}/resolve`, `/api/resolutions/*` — no LLM
       involved yet. Verified end-to-end against real data (see the plan's
-      own notes on what that surfaced). Frontend review panel not built yet.
-- [ ] Security resolver, Phases 5-8: MCP server, local-LLM agent for
-      ambiguous cases, ML ranker, additional MCP servers/agents
+      own notes on what that surfaced). Frontend review panel (`AccountsPage`'s
+      "Security resolver" card) built and verified in-browser against live data.
+- [x] Security resolver, Phase 5: `security` MCP server (`backend/ai/mcp_servers/security`)
+      exposing the resolver's 9 read/write tools over stdio. Verified with a
+      real stdio subprocess client (tool listing + real yfinance/DB round-trips).
+- [x] Security resolver, Phase 6: `security_resolver` agent
+      (`backend/ai/agents/security_resolver`) — tool-calling loop,
+      deterministic flag-for-review fallback, `agent_runs` audit trail,
+      `POST /api/resolutions/{id}/agent`. Model backend is pluggable
+      (`ai/common/llm.py`: `AGENT_PROVIDER=ollama|openai` — Ollama locally,
+      or any OpenAI-compatible hosted API like Groq — swap models/providers
+      via `.env`, never code). Verified end-to-end against real Postgres, a
+      real MCP subprocess, and real Ollama: first with `mistral:latest`
+      (not tool-tuned — scored 0/6, proving the harness/fallback work
+      correctly), which surfaced and led to fixing a real bug in
+      `OllamaChatClient` (its SDK pydantic-validates outbound tool_calls
+      against its own nested `{"function": {...}}` shape — this project's
+      internal flat shape needed one more translation step, now covered by
+      regression tests in `tests/test_llm_clients.py`). Then with
+      `qwen3:8b` (pulled and evaluated for real): **5/6 final_accuracy, 0
+      safety_violations, 100% terminated_ok** on the offline harness, plus
+      one full live run (real ambiguous ISIN, 8 real candidates) correctly
+      resolved in a single tool call. `AGENT_MODEL` defaults to `qwen3:8b`;
+      `AGENT_ENABLED` stays `false` by default regardless.
+- [ ] Security resolver, Phases 7-8: ML ranker, additional MCP servers/agents
 - [ ] AI/agent layer beyond the (non-LLM) security resolver above
       (deliberately out of scope for this pass)

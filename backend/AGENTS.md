@@ -63,6 +63,23 @@ app/
     routes/resolutions.py  everything about an existing security resolution
                             (POST /api/assets/{id}/resolve itself lives in assets.py)
     schemas.py            Pydantic REQUEST models only (see below)
+
+ai/                  LLM/agent layer, sibling to app/, never mixed into it —
+                     see backend/ai/AGENTS.md for its own rule set.
+  mcp_servers/security/  MCP server exposing the resolver's use cases as 9
+                         tools over stdio (Phase 5 of
+                         plans/agentic_asset_mapping.md); tools/ has one
+                         thin wrapper function per file, no logic.
+  agents/security_resolver/  the local-LLM agent (Phase 6) that uses those
+                             tools to finish a NEEDS_AGENT resolution;
+                             evaluation/ is its offline eval harness.
+  common/                shared building blocks every agent uses:
+    jsonable.py             dataclass/Decimal/date/set -> JSON-safe dict
+    llm.py                  pluggable model backend: OllamaChatClient,
+                             OpenAiCompatibleChatClient (Groq/OpenAI/...),
+                             build_chat_client() picks one from settings
+    mcp_client.py            stdio MCP client, adapted for the agent loop
+    agent_loop.py            the one tool-calling loop every agent uses
 ```
 
 **Dependency direction is one-way**: `domain` imports nothing from this app.
@@ -71,6 +88,12 @@ FastAPI/SQLAlchemy. `adapters` implement `ports` and may import `domain`.
 `container.py` is the only place that imports both a port and its concrete
 adapter to wire them together. `api/routes` call `container.build_*()` and
 nothing else — no adapter imports, no business logic in a route body.
+`ai/` may import from `app/` (via `app.container`'s `build_*`/repo
+factories) freely. The only import the other way is `container.py` itself
+wiring in `SecurityResolverAgent` (so routes can call
+`build_security_resolver_agent()`) — no other module under `app/` may
+import `ai/` directly. See `backend/ai/AGENTS.md` for the full rule set
+that package follows.
 
 **Responses skip a schema layer.** `api/schemas.py` holds Pydantic *request*
 models only. Responses are the application layer's plain dataclasses
@@ -185,7 +208,12 @@ confident enough) or persist an open `asset_resolutions` row for
 or — a later phase — a local-LLM agent). `AssetRepo.apply_listing` is the
 **only** place a `YFINANCE` identifier is written, whether the caller is
 rules, a human via `POST /api/resolutions/{id}/accept`, or (later) an agent
-— never call `add_identifier` directly for this.
+— never call `add_identifier` directly for this. It also renames the asset
+(`domain/listings.py::resolved_display_name`, applied by every
+`apply_listing` call site) to Yahoo's own name for the chosen listing
+whenever that's more readable than what's there — no ISIN or broker code is
+left behind once an asset resolves, and no LLM involved: the name already
+comes back from `MarketDataPort.get_listing_info`.
 
 This runs from three places: the scheduled job
 (`adapters/scheduler.py::run_resolver_job`, every `RESOLVER_INTERVAL_MINUTES`),
@@ -207,6 +235,24 @@ The problem: `TestClient` (used by every route test) runs `BackgroundTasks`
 and silently remapped a real asset. The resolver only ever runs from the
 scheduled job or an explicit single-asset action, both of which a plain
 `pytest` run never triggers.
+
+**Agent access** (Phase 5, implemented): `ai/mcp_servers/security/` exposes
+this same use case as 9 MCP tools over stdio — `python -m
+ai.mcp_servers.security`. The tools call `accept()`/`flag_for_review()`
+directly, not through the scheduler, so the `BackgroundTasks`/`lifespan`
+warning above doesn't apply to them; see `backend/ai/AGENTS.md` for the
+rules that do.
+
+**The agent itself** (Phase 6, implemented): `ai/agents/security_resolver/`
+is a tool-calling agent that uses those MCP tools to finish a
+`NEEDS_AGENT` resolution — see `ai/agents/security_resolver/README.md`.
+The model backend is pluggable (`AGENT_PROVIDER=ollama|openai` — Ollama
+locally, or any OpenAI-compatible hosted API like Groq; see
+`ai/common/llm.py`), so swapping models is a `.env` change, never code.
+Runs only via `POST /api/resolutions/{id}/agent`, gated on
+`AGENT_ENABLED=true` (default `false`); never scheduled, never
+`BackgroundTasks`. It always leaves the resolution in a settled state
+(`RESOLVED_BY_AGENT` or `NEEDS_REVIEW`), never stuck.
 
 ## Known limitations (don't rediscover these)
 
@@ -232,7 +278,14 @@ scheduled job or an explicit single-asset action, both of which a plain
   a newly-mapped asset almost always means a new minor-unit currency turned
   up and needs adding there. Unmapped assets are flagged `needs_mapping=True`;
   resolve them via the security resolver (`POST /api/assets/{id}/resolve`,
-  or the scheduled job) or manually via `POST /api/assets/{id}/map`.
+  or the scheduled job) or manually via `POST /api/assets/{id}/map`. For many
+  mutual funds `.info["shortName"]` is just the bare symbol again (no real
+  short name) while `.info["longName"]` has the actual readable one — e.g.
+  Yahoo's `0P0001CLDM.F` gives `shortName="0P0001CLDM.F"` but
+  `longName="Fidelity S&P 500 Index EUR P Acc"`. A plain `shortName or
+  longName` silently picks the useless one; `get_listing_info` only takes
+  `shortName` when it differs from the symbol (see the real MyInvestor
+  fund names this fixed, in git history).
 - **OpenFIGI's free tier is rate-limited** (roughly 25 req/min without an API
   key — check https://www.openfigi.com/api for the current number). An
   optional `OPENFIGI_API_KEY` raises it. `OpenFigiSecurityMaster.map_isin`
@@ -308,3 +361,18 @@ when running in Docker.
 Tests: `pytest` (needs a running Postgres — `docker compose up -d db` first,
 since `main.py`'s lifespan runs migrations against `DATABASE_URL` on app
 startup, which `TestClient` triggers).
+
+MCP server (Phase 5, optional — only needed to use/develop the agent-facing
+tools): `pip install -e ".[ai]"` then `python -m ai.mcp_servers.security`,
+or point an MCP client (`.mcp.json`, Claude Desktop, ...) at that same
+command with `cwd` set to `backend/`. See `ai/mcp_servers/security/README.md`.
+
+security_resolver agent (Phase 6, optional): also needs a reachable model
+backend — either [Ollama](https://ollama.com) running locally with a
+tool-capable model pulled (its Ollama library page must list **tools**),
+or an API key for an OpenAI-compatible provider like Groq — plus
+`AGENT_ENABLED=true`, `AGENT_PROVIDER`, `AGENT_BASE_URL`, `AGENT_MODEL` (and
+`AGENT_API_KEY` for the `openai` provider) set in `.env`. Try it via
+`POST /api/resolutions/{id}/agent` on a `NEEDS_AGENT` resolution, or
+evaluate a model offline first — see
+`ai/agents/security_resolver/evaluation/README.md`.

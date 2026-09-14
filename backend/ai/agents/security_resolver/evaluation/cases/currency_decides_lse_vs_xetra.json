@@ -1,0 +1,104 @@
+{
+  "id": "currency_decides_lse_vs_xetra",
+  "resolution": {
+    "id": 9001,
+    "asset_id": 9001,
+    "context": {
+      "asset_id": 9001,
+      "isin": "IE00B3XXRP09",
+      "broker_symbol": "VUSA",
+      "broker_name": "Vanguard S&P 500 UCITS ETF",
+      "broker_exchange": "LSEETF",
+      "broker_mic": "XLON",
+      "currency": "GBP",
+      "broker_key": "interactive_brokers"
+    },
+    "status": "NEEDS_AGENT",
+    "decided_by": null,
+    "note": "Rules found candidates in two currencies and the margin was under the auto-accept threshold.",
+    "scorer_version": "rules-v1",
+    "candidates": [
+      {
+        "id": 501,
+        "symbol": "VUSA.L",
+        "found_by": ["openfigi", "yahoo_isin"],
+        "info": {
+          "symbol": "VUSA.L",
+          "name": "Vanguard S&P 500 UCITS ETF",
+          "currency": "GBP",
+          "quote_type": "ETF",
+          "last_close": 92.41,
+          "last_trade_date": "2026-09-11",
+          "avg_volume": 500000
+        },
+        "mic": "XLON",
+        "asset_class": "ETF",
+        "features": {
+          "has_recent_price": true,
+          "isin_confirmed": true,
+          "currency_match": true,
+          "exchange_match": 1.0,
+          "symbol_match": true,
+          "name_similarity": 1.0,
+          "most_liquid": true,
+          "source_count": 2,
+          "days_since_trade": 3
+        },
+        "score": 79
+      },
+      {
+        "id": 502,
+        "symbol": "VUSA.DE",
+        "found_by": ["openfigi"],
+        "info": {
+          "symbol": "VUSA.DE",
+          "name": "Vanguard S&P 500 UCITS ETF",
+          "currency": "EUR",
+          "quote_type": "ETF",
+          "last_close": 107.02,
+          "last_trade_date": "2026-09-11",
+          "avg_volume": 20000
+        },
+        "mic": "XETR",
+        "asset_class": "ETF",
+        "features": {
+          "has_recent_price": true,
+          "isin_confirmed": true,
+          "currency_match": false,
+          "exchange_match": 0.0,
+          "symbol_match": true,
+          "name_similarity": 1.0,
+          "most_liquid": false,
+          "source_count": 1,
+          "days_since_trade": 3
+        },
+        "score": 30
+      }
+    ],
+    "selected_candidate_id": null
+  },
+  "tool_fixtures": {
+    "validate_listing": {
+      "VUSA.L": {
+        "symbol": "VUSA.L",
+        "name": "Vanguard S&P 500 UCITS ETF",
+        "currency": "GBP",
+        "quote_type": "ETF",
+        "last_close": 92.41,
+        "last_trade_date": "2026-09-11",
+        "avg_volume": 500000
+      },
+      "VUSA.DE": {
+        "symbol": "VUSA.DE",
+        "name": "Vanguard S&P 500 UCITS ETF",
+        "currency": "EUR",
+        "quote_type": "ETF",
+        "last_close": 107.02,
+        "last_trade_date": "2026-09-11",
+        "avg_volume": 20000
+      }
+    }
+  },
+  "expected": { "final_tool": "save_security_mapping", "symbol": "VUSA.L" },
+  "tags": ["currency_decides"]
+}

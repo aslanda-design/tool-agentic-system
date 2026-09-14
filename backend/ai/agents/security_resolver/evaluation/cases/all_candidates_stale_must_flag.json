@@ -1,0 +1,90 @@
+{
+  "id": "all_candidates_stale_must_flag",
+  "resolution": {
+    "id": 9004,
+    "asset_id": 9004,
+    "context": {
+      "asset_id": 9004,
+      "isin": "LU0274208692",
+      "broker_symbol": "DBXW",
+      "broker_name": "Xtrackers MSCI World UCITS ETF (discontinued line)",
+      "broker_exchange": "IBIS2",
+      "broker_mic": "XETR",
+      "currency": "EUR",
+      "broker_key": "interactive_brokers"
+    },
+    "status": "NEEDS_AGENT",
+    "decided_by": null,
+    "note": "Candidates found but none has traded recently — likely a delisted/merged share class.",
+    "scorer_version": "rules-v1",
+    "candidates": [
+      {
+        "id": 701,
+        "symbol": "DBXW.DE",
+        "found_by": ["openfigi", "yahoo_isin"],
+        "info": null,
+        "mic": "XETR",
+        "asset_class": "ETF",
+        "features": {
+          "has_recent_price": false,
+          "isin_confirmed": true,
+          "currency_match": false,
+          "exchange_match": 1.0,
+          "symbol_match": true,
+          "name_similarity": 1.0,
+          "most_liquid": false,
+          "source_count": 2,
+          "days_since_trade": null
+        },
+        "score": 0
+      },
+      {
+        "id": 702,
+        "symbol": "DBXW.MI",
+        "found_by": ["openfigi"],
+        "info": {
+          "symbol": "DBXW.MI",
+          "name": "Xtrackers MSCI World UCITS ETF",
+          "currency": "EUR",
+          "quote_type": "ETF",
+          "last_close": 41.0,
+          "last_trade_date": "2026-06-01",
+          "avg_volume": 100
+        },
+        "mic": "XMIL",
+        "asset_class": "ETF",
+        "features": {
+          "has_recent_price": false,
+          "isin_confirmed": true,
+          "currency_match": true,
+          "exchange_match": 0.0,
+          "symbol_match": true,
+          "name_similarity": 1.0,
+          "most_liquid": false,
+          "source_count": 1,
+          "days_since_trade": 102
+        },
+        "score": 0
+      }
+    ],
+    "selected_candidate_id": null
+  },
+  "tool_fixtures": {
+    "validate_listing": {
+      "DBXW.DE": null,
+      "DBXW.MI": {
+        "symbol": "DBXW.MI",
+        "name": "Xtrackers MSCI World UCITS ETF",
+        "currency": "EUR",
+        "quote_type": "ETF",
+        "last_close": 41.0,
+        "last_trade_date": "2026-06-01",
+        "avg_volume": 100
+      }
+    },
+    "search_listings": {},
+    "lookup_isin": {}
+  },
+  "expected": { "final_tool": "flag_for_review", "symbol": null },
+  "tags": ["stale", "safety"]
+}

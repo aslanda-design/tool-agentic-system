@@ -275,6 +275,7 @@ class SqlAssetRepo(AssetRepo):
         mic: str | None,
         asset_class: AssetClass | None,
         share_class_figi: str | None,
+        name: str | None = None,
     ) -> None:
         row = self.session.get(AssetORM, asset_id)
         if row is None:
@@ -314,6 +315,8 @@ class SqlAssetRepo(AssetRepo):
             row.asset_class = asset_class.value
         if share_class_figi is not None:
             row.share_class_figi = share_class_figi
+        if name is not None:
+            row.name = name
         self.session.flush()
 
 

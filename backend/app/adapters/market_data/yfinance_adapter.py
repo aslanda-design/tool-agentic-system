@@ -197,7 +197,18 @@ class YFinanceMarketData(MarketDataPort):
         quote_type = None
         try:
             info = ticker.info  # slow, occasionally flaky — last resort, name/quote_type only
-            name = info.get("shortName") or info.get("longName") or symbol
+            short_name = info.get("shortName")
+            long_name = info.get("longName")
+            # For many mutual funds Yahoo sets shortName to the bare symbol
+            # itself (no real short name) — longName still has the readable
+            # one (e.g. "Fidelity S&P 500 Index EUR P Acc" for 0P0001CLDM.F),
+            # so don't let a symbol-shaped shortName win via `or`.
+            if short_name and short_name.strip().upper() != symbol.upper():
+                name = short_name
+            elif long_name:
+                name = long_name
+            else:
+                name = short_name or symbol
             quote_type = info.get("quoteType")
         except Exception:
             logger.info("yfinance: .info unavailable for %s — using symbol as name", symbol)

@@ -11,6 +11,14 @@ data/
 *.db
 *.sqlite
 *.sqlite3
+files/
+
+# --- security_resolver agent evaluation (Phase 6) ---
+# cases_local/ holds cases exported from real resolutions (real holdings —
+# personal data); results/ holds evaluation run output. See
+# backend/ai/agents/security_resolver/evaluation/README.md.
+backend/ai/agents/security_resolver/evaluation/cases_local/
+backend/ai/agents/security_resolver/evaluation/results/
 
 # --- Python ---
 backend/.venv/

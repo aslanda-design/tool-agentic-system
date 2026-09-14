@@ -99,6 +99,7 @@ class AssetRepo(ABC):
         mic: str | None,
         asset_class: AssetClass | None,
         share_class_figi: str | None,
+        name: str | None = None,
     ) -> None:
         """Make `yahoo_symbol` the asset's single pricing listing — the ONLY
         way a YFINANCE mapping should be written, whether decided by rules,
@@ -115,7 +116,10 @@ class AssetRepo(ABC):
         see plans/agentic_asset_mapping.md bug B3), `assets.exchange` to
         `mic` and `assets.needs_mapping` to False. `asset_class` and
         `share_class_figi` are applied only when given (None leaves the
-        current value alone)."""
+        current value alone). `name`, when given, replaces the asset's
+        display name (e.g. an ISIN or a broker's internal code) with Yahoo's
+        own readable name for the listing — see domain.listings.resolved_display_name,
+        which callers use to decide when that's actually an improvement."""
 
 
 class PortfolioRepo(ABC):

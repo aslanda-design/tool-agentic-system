@@ -106,6 +106,7 @@ class FakeAssetRepo:
         mic: str | None,
         asset_class: AssetClass | None,
         share_class_figi: str | None,
+        name: str | None = None,
     ) -> None:
         conflict_id = self._by_identifier.get((IdentifierScheme.YFINANCE, yahoo_symbol))
         if conflict_id is not None and conflict_id != asset_id:
@@ -126,6 +127,8 @@ class FakeAssetRepo:
             asset.asset_class = asset_class
         if share_class_figi is not None:
             asset.share_class_figi = share_class_figi
+        if name is not None:
+            asset.name = name
 
 
 @dataclass
