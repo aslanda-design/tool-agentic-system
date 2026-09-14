@@ -30,6 +30,11 @@ class BrokerHolding:
     currency: str
     ibkr_conid: str | None = None
     isin: str | None = None
+    # The broker's own exchange code (e.g. IBKR's contract.primaryExchange —
+    # 'IBIS2', 'LSEETF') — feeds the security resolver's context (see
+    # domain/exchanges.py, application/asset_resolution.py). Not necessarily
+    # a listing/market-data venue by itself.
+    exchange: str | None = None
 
 
 @dataclass(slots=True)
@@ -52,6 +57,12 @@ class BrokerTransaction:
     executed_at: datetime
     ibkr_conid: str | None = None
     isin: str | None = None
+    # See BrokerHolding.exchange. `name` is the broker's own description of
+    # the instrument (e.g. Flex's `description` attribute) — better than the
+    # bare symbol when a fresh needs_mapping asset is created from a
+    # transaction rather than a holding.
+    exchange: str | None = None
+    name: str | None = None
 
 
 @dataclass(slots=True)

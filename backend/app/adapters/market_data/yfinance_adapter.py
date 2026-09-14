@@ -14,6 +14,7 @@ from decimal import Decimal
 
 import yfinance as yf
 
+from app.domain.listings import ListingInfo
 from app.ports.market_data import AssetSearchResult, BarData, IntradayBarData, MarketDataPort, QuoteData
 
 logger = logging.getLogger(__name__)
@@ -26,11 +27,38 @@ _INTRADAY_INTERVALS: dict[str, tuple[str, int]] = {
     "1h": ("60m", 730),
 }
 
+# Currencies Yahoo reports quotes/bars in MINOR units (pence, cents) rather
+# than the ISO currency's major unit -> (ISO code, divisor). London-listed
+# lines are the common case ('GBp'/'GBX' = pence; divide by 100 to get GBP).
+# Getting this wrong doesn't just mis-tag a currency — it overvalues the
+# position by the divisor (100x for pence), since the raw number is used
+# as-is as the price. See plans/agentic_asset_mapping.md bug B1.
+_MINOR_UNIT_CURRENCIES: dict[str, tuple[str, Decimal]] = {
+    "GBp": ("GBP", Decimal(100)),
+    "GBX": ("GBP", Decimal(100)),
+    "ZAc": ("ZAR", Decimal(100)),
+    "ILA": ("ILS", Decimal(100)),
+}
 
-def _dec(value) -> Decimal | None:
+
+def _normalize_currency(raw: str | None) -> tuple[str | None, Decimal]:
+    """(ISO currency code or None, divisor to apply to any price/amount
+    yfinance reported alongside `raw`). Deliberately returns None rather
+    than a fallback like 'USD' when yfinance gave us nothing — callers
+    decide their own fallback (see AssetSearchResult.currency's docstring)
+    rather than have a wrong guess baked in here and propagated silently."""
+    if not raw:
+        return None, Decimal(1)
+    if raw in _MINOR_UNIT_CURRENCIES:
+        return _MINOR_UNIT_CURRENCIES[raw]
+    return raw.upper(), Decimal(1)
+
+
+def _dec(value, divisor: Decimal = Decimal(1)) -> Decimal | None:
     if value is None:
         return None
-    return Decimal(str(value))
+    result = Decimal(str(value))
+    return result / divisor if divisor != 1 else result
 
 
 class YFinanceMarketData(MarketDataPort):
@@ -39,14 +67,18 @@ class YFinanceMarketData(MarketDataPort):
         for symbol in symbols:
             try:
                 info = yf.Ticker(symbol).fast_info
-                price = _dec(info.get("lastPrice"))
+                currency, divisor = _normalize_currency(info.get("currency"))
+                price = _dec(info.get("lastPrice"), divisor)
                 if price is None:
                     continue
                 results[symbol] = QuoteData(
                     symbol=symbol,
                     price=price,
-                    prev_close=_dec(info.get("previousClose")),
-                    currency=(info.get("currency") or "USD").upper(),
+                    prev_close=_dec(info.get("previousClose"), divisor),
+                    # Quotes always need a currency to be usable downstream
+                    # (build_snapshots.py prices a holding in it) — USD is
+                    # the least-wrong fallback when yfinance gave us none.
+                    currency=currency or "USD",
                 )
             except Exception:
                 logger.warning("yfinance: failed to fetch quote for %s", symbol, exc_info=True)
@@ -54,9 +86,9 @@ class YFinanceMarketData(MarketDataPort):
 
     def get_history(self, symbol: str, start: date, end: date) -> list[BarData]:
         try:
-            df = yf.Ticker(symbol).history(
-                start=start, end=end + timedelta(days=1), interval="1d", auto_adjust=False
-            )
+            ticker = yf.Ticker(symbol)
+            _, divisor = _normalize_currency(ticker.fast_info.get("currency"))
+            df = ticker.history(start=start, end=end + timedelta(days=1), interval="1d", auto_adjust=False)
         except Exception:
             logger.warning("yfinance: failed to fetch history for %s", symbol, exc_info=True)
             return []
@@ -68,12 +100,12 @@ class YFinanceMarketData(MarketDataPort):
                 bars.append(
                     BarData(
                         date=idx.date(),
-                        open=_dec(row["Open"]),
-                        high=_dec(row["High"]),
-                        low=_dec(row["Low"]),
-                        close=_dec(row["Close"]),
-                        adj_close=_dec(row.get("Adj Close", row["Close"])),
-                        volume=_dec(row.get("Volume", 0)) or Decimal("0"),
+                        open=_dec(row["Open"], divisor),
+                        high=_dec(row["High"], divisor),
+                        low=_dec(row["Low"], divisor),
+                        close=_dec(row["Close"], divisor),
+                        adj_close=_dec(row.get("Adj Close", row["Close"]), divisor),
+                        volume=_dec(row.get("Volume", 0)) or Decimal(0),
                     )
                 )
             except Exception:
@@ -86,7 +118,9 @@ class YFinanceMarketData(MarketDataPort):
             return []
         interval, lookback_days = mapping
         try:
-            df = yf.Ticker(symbol).history(period=f"{lookback_days}d", interval=interval, auto_adjust=False)
+            ticker = yf.Ticker(symbol)
+            _, divisor = _normalize_currency(ticker.fast_info.get("currency"))
+            df = ticker.history(period=f"{lookback_days}d", interval=interval, auto_adjust=False)
         except Exception:
             logger.warning("yfinance: failed to fetch intraday %s history for %s", granularity, symbol, exc_info=True)
             return []
@@ -98,11 +132,11 @@ class YFinanceMarketData(MarketDataPort):
                 bars.append(
                     IntradayBarData(
                         timestamp=idx.to_pydatetime(),
-                        open=_dec(row["Open"]),
-                        high=_dec(row["High"]),
-                        low=_dec(row["Low"]),
-                        close=_dec(row["Close"]),
-                        volume=_dec(row.get("Volume", 0)) or Decimal("0"),
+                        open=_dec(row["Open"], divisor),
+                        high=_dec(row["High"], divisor),
+                        low=_dec(row["Low"], divisor),
+                        close=_dec(row["Close"], divisor),
+                        volume=_dec(row.get("Volume", 0)) or Decimal(0),
                     )
                 )
             except Exception:
@@ -128,13 +162,52 @@ class YFinanceMarketData(MarketDataPort):
                 "MUTUALFUND": "FUND",
                 "CRYPTOCURRENCY": "CRYPTO",
             }.get(quote_type, "OTHER")
+            currency, _divisor = _normalize_currency(q.get("currency"))
             results.append(
                 AssetSearchResult(
                     symbol=symbol,
                     name=q.get("shortname") or q.get("longname") or symbol,
                     exchange=q.get("exchange"),
                     asset_class=asset_class,
-                    currency=(q.get("currency") or "USD").upper(),
+                    currency=currency,
                 )
             )
         return results
+
+    def get_listing_info(self, symbol: str) -> ListingInfo | None:
+        try:
+            ticker = yf.Ticker(symbol)
+            fast_info = ticker.fast_info
+            currency, divisor = _normalize_currency(fast_info.get("currency"))
+            hist = ticker.history(period="1mo", interval="1d", auto_adjust=False)
+        except Exception:
+            logger.warning("yfinance: failed to fetch listing info for %s", symbol, exc_info=True)
+            return None
+        if hist is None or hist.empty:
+            return None
+        try:
+            last_close = _dec(hist["Close"].iloc[-1], divisor)
+            last_trade_date = hist.index[-1].date()
+            avg_volume = _dec(hist["Volume"].tail(10).mean())
+        except Exception:
+            logger.warning("yfinance: unparseable history for %s", symbol, exc_info=True)
+            return None
+
+        name = symbol
+        quote_type = None
+        try:
+            info = ticker.info  # slow, occasionally flaky — last resort, name/quote_type only
+            name = info.get("shortName") or info.get("longName") or symbol
+            quote_type = info.get("quoteType")
+        except Exception:
+            logger.info("yfinance: .info unavailable for %s — using symbol as name", symbol)
+
+        return ListingInfo(
+            symbol=symbol,
+            name=name,
+            currency=currency,
+            quote_type=quote_type,
+            last_close=last_close,
+            last_trade_date=last_trade_date,
+            avg_volume=avg_volume,
+        )

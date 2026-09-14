@@ -13,9 +13,12 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from app.domain.models import AccountSource, Asset, IdentifierScheme, Transaction, TransactionType
+from app.domain.errors import ListingNotFoundError
+from app.domain.exchanges import mic_for_yahoo_symbol
+from app.domain.listings import Candidate, ResolutionStatus
+from app.domain.models import AccountSource, Asset, Transaction, TransactionType
 from app.ports.market_data import MarketDataPort
-from app.ports.repositories import AssetRepo, PortfolioRepo
+from app.ports.repositories import AssetRepo, PortfolioRepo, ResolutionRepo
 
 from .asset_resolution import resolve_asset
 from .import_transactions import _fill_holdings_gaps_from_transactions
@@ -102,11 +105,19 @@ class ManualEntryUseCase:
 
 
 class MapAssetUseCase:
-    """Confirms the yfinance ticker for an asset flagged `needs_mapping`."""
+    """Confirms the yfinance ticker for an asset flagged `needs_mapping` —
+    the manual-entry counterpart to the automatic resolver (see
+    application/resolve_security.py, added in a later phase)."""
 
-    def __init__(self, asset_repo: AssetRepo, market_data: MarketDataPort | None = None) -> None:
+    def __init__(
+        self,
+        asset_repo: AssetRepo,
+        market_data: MarketDataPort | None = None,
+        resolution_repo: ResolutionRepo | None = None,
+    ) -> None:
         self.asset_repo = asset_repo
         self.market_data = market_data
+        self.resolution_repo = resolution_repo
 
     def list_unmapped(self):
         return self.asset_repo.list_needing_mapping()
@@ -130,5 +141,37 @@ class MapAssetUseCase:
         return self.market_data.search(query)
 
     def resolve(self, asset_id: int, yfinance_symbol: str) -> None:
-        self.asset_repo.add_identifier(asset_id, IdentifierScheme.YFINANCE, yfinance_symbol)
-        self.asset_repo.set_needs_mapping(asset_id, False)
+        """Confirm `yfinance_symbol` as the asset's pricing listing, via the
+        same apply_listing path the automatic resolver uses (see
+        AssetRepo.apply_listing) — never a bare add_identifier, so a manual
+        correction also fixes assets.currency (bug B3) and never leaves a
+        stray second YFINANCE row behind (bug B4). Raises
+        ListingNotFoundError if the symbol doesn't exist or has no currency
+        we can price it in; AssetConflictError if it's already mapped to a
+        different asset."""
+        if self.market_data is None:
+            raise ListingNotFoundError(yfinance_symbol)
+        info = self.market_data.get_listing_info(yfinance_symbol)
+        if info is None or info.currency is None:
+            raise ListingNotFoundError(yfinance_symbol)
+
+        mic = mic_for_yahoo_symbol(yfinance_symbol)
+        self.asset_repo.apply_listing(asset_id, yfinance_symbol, info.currency, mic, None, None)
+
+        if self.resolution_repo is None:
+            return
+        resolution = self.resolution_repo.get_open_for_asset(asset_id)
+        if resolution is None:
+            return
+        # A manual pick is exactly the label ML training needs later (see
+        # plans/agentic_asset_mapping.md Phase 7): record it as a
+        # user-selected candidate on the open resolution, superseding
+        # whatever rules/agent had proposed.
+        existing = next((c for c in resolution.candidates if c.symbol == yfinance_symbol), None)
+        if existing is not None and existing.id is not None:
+            candidate_id = existing.id
+        else:
+            candidate = Candidate(symbol=yfinance_symbol, found_by={"user"}, info=info, mic=mic)
+            candidate_id = self.resolution_repo.add_candidate(resolution.id, candidate)
+        self.resolution_repo.select_candidate(resolution.id, candidate_id)
+        self.resolution_repo.set_status(resolution.id, ResolutionStatus.RESOLVED_BY_USER, "user", "")

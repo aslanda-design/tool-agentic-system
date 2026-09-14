@@ -241,3 +241,19 @@ def test_generic_csv_missing_required_field_is_an_error_row():
     stmt = parse_generic_csv(text.encode("utf-8"))
     assert len(stmt.rows) == 1
     assert stmt.rows[0].errors
+
+
+def test_generic_csv_optional_exchange_column_is_carried_through():
+    text = (
+        "date,symbol,type,quantity,price,currency,exchange\n"
+        "2025-01-01,VUSA,BUY,10,90.0,GBP,LSEETF\n"
+    )
+    stmt = parse_generic_csv(text.encode("utf-8"))
+    assert stmt.unmapped_columns == []
+    assert stmt.rows[0].exchange == "LSEETF"
+
+
+def test_generic_csv_without_exchange_column_leaves_it_none():
+    text = "date,symbol,type,quantity,price,currency\n2025-01-01,ACME,BUY,10,5.5,USD\n"
+    stmt = parse_generic_csv(text.encode("utf-8"))
+    assert stmt.rows[0].exchange is None

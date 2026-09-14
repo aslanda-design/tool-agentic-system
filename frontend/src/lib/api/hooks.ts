@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { endpoints } from './endpoints'
-import type { Granularity } from './types'
+import type { Granularity, ResolutionStatus } from './types'
 
 export function usePortfolioSummary() {
   return useQuery({ queryKey: ['portfolio', 'summary'], queryFn: endpoints.portfolioSummary })
@@ -155,4 +155,60 @@ export function useDeleteAsset() {
 
 export function useRefreshMarketData() {
   return useInvalidatingMutation(endpoints.refreshMarketData, [['portfolio'], ['positions'], ['assets']])
+}
+
+// --- Security resolver (see plans/agentic_asset_mapping.md) ---------------
+
+export function useResolutions(statuses?: ResolutionStatus[]) {
+  const key = statuses && statuses.length > 0 ? [...statuses].sort() : 'default'
+  return useQuery({ queryKey: ['resolutions', 'list', key], queryFn: () => endpoints.listResolutions(statuses) })
+}
+
+export function useRecentResolutions(decidedBy?: string[], days = 14) {
+  const key = decidedBy && decidedBy.length > 0 ? [...decidedBy].sort() : 'all'
+  return useQuery({
+    queryKey: ['resolutions', 'recent', key, days],
+    queryFn: () => endpoints.recentResolutions(decidedBy, days),
+  })
+}
+
+export function useResolution(resolutionId: number, enabled = true) {
+  return useQuery({
+    queryKey: ['resolutions', resolutionId],
+    queryFn: () => endpoints.resolution(resolutionId),
+    enabled,
+  })
+}
+
+// Every mutation below touches a resolution's outcome and can change an
+// asset's mapping/currency, so all invalidate the same broad set — the
+// resolver panel, the asset it belongs to, and anything priced off it.
+const RESOLUTION_INVALIDATE_KEYS = [['resolutions'], ['assets'], ['portfolio'], ['positions']]
+
+export function useResolveAssetNow() {
+  return useInvalidatingMutation(endpoints.resolveAssetNow, RESOLUTION_INVALIDATE_KEYS)
+}
+
+export function useAcceptResolutionCandidate() {
+  return useInvalidatingMutation(
+    ({ resolutionId, candidateId, note }: { resolutionId: number; candidateId: number; note?: string }) =>
+      endpoints.acceptResolutionCandidate(resolutionId, candidateId, note),
+    RESOLUTION_INVALIDATE_KEYS,
+  )
+}
+
+export function useAddResolutionCandidate() {
+  return useInvalidatingMutation(
+    ({ resolutionId, symbol }: { resolutionId: number; symbol: string }) =>
+      endpoints.addResolutionCandidate(resolutionId, symbol),
+    [['resolutions']],
+  )
+}
+
+export function useFlagResolutionForReview() {
+  return useInvalidatingMutation(
+    ({ resolutionId, note }: { resolutionId: number; note?: string }) =>
+      endpoints.flagResolutionForReview(resolutionId, note),
+    [['resolutions']],
+  )
 }

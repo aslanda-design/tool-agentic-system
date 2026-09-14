@@ -7,7 +7,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.adapters.scheduler import build_scheduler, gap_fill_snapshots_on_startup
-from app.api.routes import accounts, assets, health, imports, manual, market_data, portfolio, positions, sync
+from app.api.routes import (
+    accounts,
+    assets,
+    health,
+    imports,
+    manual,
+    market_data,
+    portfolio,
+    positions,
+    resolutions,
+    sync,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +51,15 @@ async def lifespan(app: FastAPI):
     _run_migrations()
     _configure_logging()
     gap_fill_snapshots_on_startup()
+    # Deliberately NOT running the security resolver here, unlike the
+    # snapshot gap-fill above: the resolver makes real outbound OpenFIGI/
+    # Yahoo calls and can permanently change a real asset's mapping — doing
+    # that on every process boot would also mean every `TestClient(app)` in
+    # the test suite (test_health.py, test_imports_route.py) does it too,
+    # against whatever database DATABASE_URL happens to point at. It runs
+    # instead via the scheduled interval job and right after an import/sync
+    # actually adds new assets (see adapters/scheduler.py's run_resolver_job
+    # and its BackgroundTasks callers in api/routes/imports.py and sync.py).
     scheduler.start()
     yield
     scheduler.shutdown(wait=False)
@@ -65,3 +85,4 @@ app.include_router(sync.router, prefix="/api")
 app.include_router(manual.router, prefix="/api")
 app.include_router(imports.router, prefix="/api")
 app.include_router(market_data.router, prefix="/api")
+app.include_router(resolutions.router, prefix="/api")

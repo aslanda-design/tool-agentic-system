@@ -5,6 +5,10 @@ including at least Trades (Symbol, ISIN, ConID, Trade Date/Time, Quantity,
 Trade Price, Commission, Currency, Buy/Sell, Transaction ID) and Cash
 Transactions (Type, Amount, Currency, Date/Time, Transaction ID), then
 generate a Flex Web Service token under Settings > API > Flex Web Service.
+Also include Description and Listing Exchange on both sections if available
+— optional (missing ones are simply read as None), but they feed the
+security resolver's context (see plans/agentic_asset_mapping.md Phase 2)
+and make an unmapped asset much easier to resolve automatically.
 
 The service is a two-step async HTTP flow: SendRequest returns a reference
 code, then GetStatement polls for the generated XML (it isn't instant).
@@ -127,6 +131,8 @@ class IBKRFlexAdapter(StatementPort):
                 executed_at=executed_at,
                 ibkr_conid=el.get("conid"),
                 isin=el.get("isin"),
+                exchange=el.get("listingExchange") or None,
+                name=el.get("description") or None,
             )
         except (InvalidOperation, ValueError, TypeError) as exc:
             logger.warning("Skipping unparseable <Trade> element (%s): %s", el.attrib, exc)
@@ -169,6 +175,8 @@ class IBKRFlexAdapter(StatementPort):
             executed_at=executed_at,
             ibkr_conid=el.get("conid"),
             isin=el.get("isin"),
+            exchange=el.get("listingExchange") or None,
+            name=el.get("description") or None,
         )
 
 

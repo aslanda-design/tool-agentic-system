@@ -12,10 +12,15 @@ portfolio value against amount invested over time.
 
 This is a personal, single-user, local-only app. It is not designed for
 multi-tenant hosting, and should not be deployed publicly without a serious
-security review (see "Security rules" below). There is no AI/agent layer in
+security review (see "Security rules" below). There is no LLM/agent layer in
 the app yet — an earlier prototype of one was removed when the backend was
 rebuilt hexagonally; if it comes back, it belongs as an inbound adapter
-alongside `api/`, not woven into the domain.
+alongside `api/`, not woven into the domain. The **security resolver**
+(deciding which market-data listing prices a broker holding — see
+`backend/AGENTS.md`'s "Security resolver" section and
+`plans/agentic_asset_mapping.md`) is a step toward that: today it's entirely
+deterministic (OpenFIGI + rule-based scoring, no LLM involved), with an
+agent as one possible escalation path for ambiguous cases in a later phase.
 
 ## Architecture
 
@@ -66,7 +71,9 @@ export is the only route MyInvestor actually offers for portfolio data. See
   auth, or expose the API beyond localhost without discussing it first —
   that changes the entire threat model for credential storage.
 - When adding a new dependency for a broker or data source, check whether it
-  phones home / sends data anywhere unexpected before adding it.
+  phones home / sends data anywhere unexpected before adding it. The
+  security resolver's OpenFIGI adapter (`backend/AGENTS.md`) sends only an
+  ISIN — never account/holding/position data — to look up exchange listings.
 
 ## Running locally
 
@@ -116,4 +123,12 @@ Paper trading port is 7497, live is 7496.
       unit-tested for error handling, but not yet run against a live TWS session)
 - [ ] MyInvestor import verified against a sell/dividend export (only the
       buy-order/"Aportaciones" export shape has been checked against real data)
-- [ ] AI/agent layer (deliberately out of scope for this pass)
+- [x] Security resolver, Phases 1-4 of `plans/agentic_asset_mapping.md`:
+      deterministic asset-mapping (OpenFIGI + rule-based scoring), scheduled
+      job, `POST /api/assets/{id}/resolve`, `/api/resolutions/*` — no LLM
+      involved yet. Verified end-to-end against real data (see the plan's
+      own notes on what that surfaced). Frontend review panel not built yet.
+- [ ] Security resolver, Phases 5-8: MCP server, local-LLM agent for
+      ambiguous cases, ML ranker, additional MCP servers/agents
+- [ ] AI/agent layer beyond the (non-LLM) security resolver above
+      (deliberately out of scope for this pass)

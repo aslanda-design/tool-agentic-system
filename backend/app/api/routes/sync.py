@@ -35,6 +35,12 @@ def sync_broker(broker_key: str, db: Session = Depends(get_db)):
     db.commit()
     container.build_snapshots_use_case(db).execute()
     db.commit()
+    # A live broker sync can create fresh needs_mapping assets too, but
+    # deliberately not auto-triggering the resolver here — see
+    # imports.py's commit_import docstring for why (TestClient runs
+    # BackgroundTasks synchronously, which turned this route's own tests
+    # into real-network-call tests). Picked up by the scheduled job or an
+    # explicit POST /api/assets/{id}/resolve instead.
     logger.info("Sync for broker_key=%s complete: %s", broker_key, result)
     return result
 

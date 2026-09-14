@@ -17,7 +17,15 @@ def resolve_asset(
     currency: str,
     ibkr_conid: str | None = None,
     isin: str | None = None,
+    exchange: str | None = None,
 ) -> Asset:
+    """`exchange` is the broker's own raw exchange code (e.g. IBKR's
+    'IBIS2', 'LSEETF') — stored on `assets.exchange` ONLY when a fresh
+    needs_mapping asset is created here, as context for the security
+    resolver (see plans/agentic_asset_mapping.md). An asset that's already
+    resolved keeps whatever exchange its confirmed listing actually uses
+    (set by AssetRepo.apply_listing) — a later broker's raw code must never
+    overwrite that."""
     if ibkr_conid:
         asset = asset_repo.find_by_identifier(IdentifierScheme.IBKR_CONID, ibkr_conid)
         if asset:
@@ -34,6 +42,7 @@ def resolve_asset(
             name=name or symbol,
             asset_class=AssetClass.EQUITY,
             currency=currency,
+            exchange=exchange,
             isin=isin,
             needs_mapping=True,
         )

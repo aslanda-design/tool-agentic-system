@@ -45,7 +45,9 @@ class SyncBrokerUseCase:
             )
             self.portfolio_repo.replace_holdings_for_account(account.id, AccountSource.API)
             for h in holdings:
-                asset = resolve_asset(self.asset_repo, h.symbol, h.name, h.currency, h.ibkr_conid, h.isin)
+                asset = resolve_asset(
+                    self.asset_repo, h.symbol, h.name, h.currency, h.ibkr_conid, h.isin, h.exchange
+                )
                 self.portfolio_repo.upsert_holding(
                     account.id, asset.id, h.quantity, h.avg_cost_price, h.currency, now, AccountSource.API
                 )
@@ -64,7 +66,9 @@ class SyncBrokerUseCase:
                 continue
             asset_id = None
             if t.symbol:
-                asset = resolve_asset(self.asset_repo, t.symbol, t.symbol, t.currency, t.ibkr_conid, t.isin)
+                asset = resolve_asset(
+                    self.asset_repo, t.symbol, t.name or t.symbol, t.currency, t.ibkr_conid, t.isin, t.exchange
+                )
                 asset_id = asset.id
             transactions.append(
                 Transaction(

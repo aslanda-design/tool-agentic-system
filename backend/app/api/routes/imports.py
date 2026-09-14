@@ -62,4 +62,15 @@ async def commit_import(
     db.commit()
     container.build_snapshots_use_case(db).execute()
     db.commit()
+    # Deliberately NOT triggering the security resolver here via
+    # BackgroundTasks, even though a fresh import is exactly the kind of
+    # ingestion that creates new needs_mapping assets: Starlette's
+    # TestClient runs BackgroundTasks synchronously as part of the request
+    # itself, which would make this endpoint's own tests fire real OpenFIGI/
+    # Yahoo network calls (and permanently mutate whatever DATABASE_URL
+    # points at) every time they ran — this bit us once already, see
+    # plans/agentic_asset_mapping.md's Phase 4 notes. Freshly-imported
+    # assets pick up a mapping via the scheduled resolver job (see
+    # adapters/scheduler.py's run_resolver_job, RESOLVER_INTERVAL_MINUTES)
+    # or an explicit POST /api/assets/{id}/resolve.
     return result

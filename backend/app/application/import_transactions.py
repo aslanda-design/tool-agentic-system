@@ -70,6 +70,10 @@ class ParsedRow:
     warnings: list[str]
     errors: list[str] = field(default_factory=list)  # non-empty -> row is never written, only shown
     row_number: int = 0  # 1-based position in the source file, for user-facing messages
+    # The source file's own exchange column, if it has one — feeds the
+    # security resolver's context when creating a fresh needs_mapping asset
+    # (see application/asset_resolution.py::resolve_asset).
+    exchange: str | None = None
 
 
 @dataclass(slots=True)
@@ -103,7 +107,9 @@ class ImportStatementUseCase:
         for t in broker_transactions:
             asset_id = None
             if t.symbol:
-                asset = resolve_asset(self.asset_repo, t.symbol, t.symbol, t.currency, t.ibkr_conid, t.isin)
+                asset = resolve_asset(
+                    self.asset_repo, t.symbol, t.name or t.symbol, t.currency, t.ibkr_conid, t.isin, t.exchange
+                )
                 asset_id = asset.id
             transactions.append(
                 Transaction(
@@ -212,7 +218,7 @@ class CsvImportUseCase:
             asset_id = None
             if row.symbol:
                 asset = resolve_asset(
-                    self.asset_repo, row.symbol, row.name or row.symbol, row.currency, None, row.isin
+                    self.asset_repo, row.symbol, row.name or row.symbol, row.currency, None, row.isin, row.exchange
                 )
                 asset_id = asset.id
             executed_at = date.fromisoformat(row.executed_at[:10])

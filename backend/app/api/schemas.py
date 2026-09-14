@@ -54,3 +54,16 @@ class ManualAccountRequest(BaseModel):
     broker_key: str
     name: str
     currency: str = "EUR"
+
+
+class AcceptCandidateRequest(BaseModel):
+    candidate_id: int
+    note: str = ""
+
+
+class AddCandidateRequest(BaseModel):
+    symbol: str
+
+
+class FlagForReviewRequest(BaseModel):
+    note: str = ""

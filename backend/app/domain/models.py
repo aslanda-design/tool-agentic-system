@@ -53,6 +53,9 @@ class Asset:
     exchange: str | None = None
     isin: str | None = None
     needs_mapping: bool = False
+    # OpenFIGI's shareClassFIGI — identifies the security across every
+    # exchange it lists on, learned once the security resolver succeeds.
+    share_class_figi: str | None = None
 
 
 @dataclass(slots=True)

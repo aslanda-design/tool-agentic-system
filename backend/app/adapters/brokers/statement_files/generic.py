@@ -1,8 +1,9 @@
 """Broker-agnostic import format: a CSV/XLSX with our own column names, for
 any broker without a dedicated parser, or as an export target from another
 tool. Expected headers: date,symbol,name,type,quantity,price,fees,currency,
-isin,external_id. `type` must be one of BUY/SELL/DIVIDEND/FEE/INTEREST/
-DEPOSIT/WITHDRAWAL/SPLIT.
+isin,external_id,exchange. `type` must be one of BUY/SELL/DIVIDEND/FEE/
+INTEREST/DEPOSIT/WITHDRAWAL/SPLIT. `exchange` is optional — only used as
+context for the security resolver when a fresh asset needs mapping.
 """
 
 from __future__ import annotations
@@ -14,7 +15,19 @@ from .headers import alias_tokens, build_column_map
 from .sniff import detect_format
 from .tabular import read_sheet
 
-GENERIC_FIELDS = ["date", "symbol", "name", "type", "quantity", "price", "fees", "currency", "isin", "external_id"]
+GENERIC_FIELDS = [
+    "date",
+    "symbol",
+    "name",
+    "type",
+    "quantity",
+    "price",
+    "fees",
+    "currency",
+    "isin",
+    "external_id",
+    "exchange",
+]
 GENERIC_ALIASES: dict[str, list[str]] = {field: [field] for field in GENERIC_FIELDS}
 GENERIC_REQUIRED = ["date", "type", "quantity", "price", "currency"]
 
@@ -73,6 +86,7 @@ def parse_generic_csv(file_bytes: bytes) -> ParsedStatement:
         symbol = (raw.get(mapped["symbol"], "").strip() or None) if "symbol" in mapped else None
         name = (raw.get(mapped["name"], "").strip() or None) if "name" in mapped else None
         isin = (raw.get(mapped["isin"], "").strip() or None) if "isin" in mapped else None
+        exchange = (raw.get(mapped["exchange"], "").strip() or None) if "exchange" in mapped else None
 
         external_id = None
         if "external_id" in mapped:
@@ -99,6 +113,7 @@ def parse_generic_csv(file_bytes: bytes) -> ParsedStatement:
                 warnings=warnings,
                 errors=errors,
                 row_number=i,
+                exchange=exchange,
             )
         )
 

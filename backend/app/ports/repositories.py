@@ -8,6 +8,13 @@ from abc import ABC, abstractmethod
 from datetime import date, datetime
 from decimal import Decimal
 
+from app.domain.listings import (
+    AgentRunRecord,
+    Candidate,
+    ResolutionContext,
+    ResolutionDTO,
+    ResolutionStatus,
+)
 from app.domain.models import (
     Account,
     Asset,
@@ -82,6 +89,33 @@ class AssetRepo(ABC):
         delete_transactions_for_asset) — those tables have no ON DELETE
         CASCADE, unlike asset_identifiers/prices/quotes/position_snapshots,
         so this would otherwise fail a foreign-key constraint."""
+
+    @abstractmethod
+    def apply_listing(
+        self,
+        asset_id: int,
+        yahoo_symbol: str,
+        currency: str,
+        mic: str | None,
+        asset_class: AssetClass | None,
+        share_class_figi: str | None,
+    ) -> None:
+        """Make `yahoo_symbol` the asset's single pricing listing — the ONLY
+        way a YFINANCE mapping should be written, whether decided by rules,
+        agent or user (see application/manual_entry.py::MapAssetUseCase and
+        application/resolve_security.py). Raises AssetConflictError if
+        `yahoo_symbol` already belongs to a different asset (call sites
+        surface this as "needs a merge" rather than silently stealing the
+        mapping). Replaces any other YFINANCE identifier this asset already
+        has — an asset prices from exactly one listing — and if the symbol
+        actually changed, clears this asset's `prices`/`quotes` rows (data
+        for the old listing, meaningless once the listing changes). Sets
+        `assets.currency` to the listing's quote currency (so cost basis and
+        market value stay in the same currency as the prices we'll fetch —
+        see plans/agentic_asset_mapping.md bug B3), `assets.exchange` to
+        `mic` and `assets.needs_mapping` to False. `asset_class` and
+        `share_class_figi` are applied only when given (None leaves the
+        current value alone)."""
 
 
 class PortfolioRepo(ABC):
@@ -255,3 +289,74 @@ class MarketDataRepo(ABC):
     @abstractmethod
     def currency_pairs_in_use(self, base_currency: str) -> list[str]:
         """Distinct non-base currencies currently held, needing FX vs base_currency."""
+
+
+class ResolutionRepo(ABC):
+    """Persistence for the security resolver (application/resolve_security.py)
+    — see plans/agentic_asset_mapping.md Phase 1/4. `asset_resolutions` +
+    `resolution_candidates` in the DB; `ResolutionDTO`/`Candidate` are the
+    domain shapes (domain/listings.py)."""
+
+    @abstractmethod
+    def create(
+        self,
+        ctx: ResolutionContext,
+        status: ResolutionStatus,
+        decided_by: str | None,
+        note: str,
+        scorer_version: str,
+        candidates: list[Candidate],
+    ) -> int:
+        """Insert a new resolution (and its candidates) for ctx.asset_id.
+        Does NOT supersede any existing open resolution — call
+        supersede_open first if replacing one. Returns the new resolution id."""
+
+    @abstractmethod
+    def get(self, resolution_id: int) -> ResolutionDTO | None: ...
+
+    @abstractmethod
+    def get_open_for_asset(self, asset_id: int) -> ResolutionDTO | None:
+        """The resolution for this asset whose status is not SUPERSEDED, if any."""
+
+    @abstractmethod
+    def list_by_status(self, statuses: list[ResolutionStatus], limit: int = 50) -> list[ResolutionDTO]: ...
+
+    @abstractmethod
+    def add_candidate(self, resolution_id: int, candidate: Candidate) -> int:
+        """Insert one more candidate onto an existing resolution (e.g. a
+        symbol the agent or user found that generation didn't). Returns the
+        new candidate id."""
+
+    @abstractmethod
+    def set_status(self, resolution_id: int, status: ResolutionStatus, decided_by: str | None, note: str) -> None: ...
+
+    @abstractmethod
+    def select_candidate(self, resolution_id: int, candidate_id: int) -> None:
+        """Mark one candidate `selected=true` and every other candidate on
+        the same resolution `selected=false`."""
+
+    @abstractmethod
+    def supersede_open(self, asset_id: int) -> None:
+        """Mark this asset's current open resolution (if any) SUPERSEDED, so
+        a fresh `create()` can take its place. No-op if there is none."""
+
+    @abstractmethod
+    def add_agent_run(self, run: AgentRunRecord) -> int:
+        """Returns the new agent_runs row id."""
+
+    @abstractmethod
+    def list_assets_to_resolve(self, retry_empty_after_hours: int = 24) -> list[int]:
+        """Asset ids flagged `needs_mapping` that either have no open
+        resolution, or have an open NEEDS_REVIEW resolution with zero
+        candidates older than `retry_empty_after_hours` (a transient
+        OpenFIGI/Yahoo failure worth retrying)."""
+
+    @abstractmethod
+    def list_recent(
+        self, since: datetime, decided_by: list[str] | None = None, limit: int = 100
+    ) -> list[ResolutionDTO]:
+        """Resolutions DECIDED (decided_at set) at or after `since`,
+        optionally filtered to specific `decided_by` values (e.g.
+        `['rules', 'agent']` to see automated decisions but not manual
+        ones), newest first. Powers a spot-check view of what the resolver
+        has been doing — see GET /api/resolutions/recent."""

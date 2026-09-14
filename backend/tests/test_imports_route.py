@@ -4,19 +4,24 @@ constraint (the fakes-based tests in test_csv_import_use_case.py prove the
 same dedup *logic*, but against an in-memory dict, not Postgres).
 
 Needs a running Postgres (see backend/AGENTS.md: `docker compose up -d db`)
-— same requirement as test_health.py. Unlike test_health.py, this test
-writes data: it creates a manual account via the real API. There is
-currently no DELETE endpoint for accounts anywhere in this app, so running
-it leaves that account behind permanently. Prefer running this against a
-disposable database, not one holding real portfolio data; if you do run it
-against your dev DB, the account is named clearly enough (`broker_key=
-"test-myinvestor-import"`) to find and drop by hand later.
+— same requirement as test_health.py. This test writes data via the real
+API: a manual account (`broker_key="test-myinvestor-import"`) plus its
+imported transactions/holdings. There's no DELETE endpoint for accounts, so
+the `_cleanup_test_account` fixture below removes them directly via SQL
+after each test — without it, a second run of this file (or the whole
+suite) sees pre-existing rows and its "first import" assertions fail, since
+the import is then actually a re-import. Prefer running against a
+disposable database regardless; this cleanup is a safety net, not a
+substitute for one holding real portfolio data.
 """
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
+from app.adapters.persistence.session import SessionLocal
 from app.main import app
 
 REAL_HEADER = "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado\n"
@@ -24,6 +29,23 @@ EXPORT = (
     REAL_HEADER + "04/09/2026;IE00BYX5MX67;500 EUR;30,444;Finalizada\n"
     "01/06/2026;IE00BYX5MX67;250 EUR;15,492;Finalizada\n"
 ).encode("utf-8")
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_test_account():
+    yield
+    session = SessionLocal()
+    try:
+        ids = session.execute(
+            text("SELECT id FROM accounts WHERE broker_key = 'test-myinvestor-import'")
+        ).scalars().all()
+        for account_id in ids:
+            session.execute(text("DELETE FROM transactions WHERE account_id = :id"), {"id": account_id})
+            session.execute(text("DELETE FROM holdings WHERE account_id = :id"), {"id": account_id})
+            session.execute(text("DELETE FROM accounts WHERE id = :id"), {"id": account_id})
+        session.commit()
+    finally:
+        session.close()
 
 
 def test_reimport_via_api_is_idempotent_against_real_postgres():

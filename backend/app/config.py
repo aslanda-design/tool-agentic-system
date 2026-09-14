@@ -28,5 +28,20 @@ class Settings(BaseSettings):
     # --- Anthropic AI advisor (not wired up yet in this phase) ---
     anthropic_api_key: str = ""
 
+    # --- OpenFIGI (security resolver — see plans/agentic_asset_mapping.md) ---
+    # Optional: raises the free-tier rate limit. Only an ISIN is ever sent
+    # to OpenFIGI, never account/holding data. https://www.openfigi.com/api
+    openfigi_api_key: str = ""
+
+    # --- Security resolver background job ---
+    resolver_enabled: bool = True
+    resolver_interval_minutes: int = 30
+    # A resolution that can't be auto-accepted goes to NEEDS_AGENT (for the
+    # local-LLM agent to try) when this is true, or straight to NEEDS_REVIEW
+    # (a human) when false. The agent itself isn't built yet (a later
+    # phase) — leave this false until it is, or ambiguous resolutions will
+    # sit in NEEDS_AGENT with nothing to pick them up.
+    agent_enabled: bool = False
+
 
 settings = Settings()

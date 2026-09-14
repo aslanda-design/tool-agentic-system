@@ -170,3 +170,70 @@ export interface ImportPreview {
   notices: string[]
   rows: ImportPreviewRow[]
 }
+
+// --- Security resolver (see plans/agentic_asset_mapping.md) ---------------
+
+// Mirrors app/domain/listings.py::ResolutionStatus.
+export type ResolutionStatus =
+  | 'AUTO_ACCEPTED'
+  | 'NEEDS_AGENT'
+  | 'NEEDS_REVIEW'
+  | 'RESOLVED_BY_AGENT'
+  | 'RESOLVED_BY_USER'
+  | 'SUPERSEDED'
+
+export interface ResolutionContext {
+  asset_id: number
+  isin: string | null
+  broker_symbol: string
+  broker_name: string
+  broker_exchange: string | null
+  broker_mic: string | null
+  currency: string
+  broker_key: string | null
+}
+
+export interface CandidateListingInfo {
+  symbol: string
+  name: string
+  currency: string | null
+  quote_type: string | null
+  last_close: number | null
+  last_trade_date: string | null
+  avg_volume: number | null
+}
+
+export interface CandidateFeatures {
+  has_recent_price: boolean
+  isin_confirmed: boolean
+  currency_match: boolean
+  exchange_match: number // 0, 0.5, or 1.0
+  symbol_match: boolean
+  name_similarity: number // 0..1
+  most_liquid: boolean
+  source_count: number
+  days_since_trade: number | null
+}
+
+export interface ResolutionCandidate {
+  id: number | null
+  symbol: string
+  found_by: string[] // 'openfigi' | 'yahoo_isin' | 'yahoo_text' | 'agent' | 'user'
+  info: CandidateListingInfo | null
+  mic: string | null
+  asset_class: string | null
+  features: CandidateFeatures
+  score: number
+}
+
+export interface Resolution {
+  id: number
+  asset_id: number
+  context: ResolutionContext
+  status: ResolutionStatus
+  decided_by: string | null // 'rules' | 'agent' | 'user' | null
+  note: string
+  scorer_version: string
+  candidates: ResolutionCandidate[]
+  selected_candidate_id: number | null
+}

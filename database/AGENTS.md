@@ -33,7 +33,7 @@ is just a string column) — both are complexity this app doesn't need yet.
 
 | Table | Why it exists |
 |---|---|
-| `assets` | One row per real-world instrument, regardless of which broker or data source knows about it. |
+| `assets` | One row per real-world instrument, regardless of which broker or data source knows about it. `share_class_figi` (OpenFIGI's cross-exchange security identifier) is learned once the security resolver succeeds — see `asset_resolutions` below. |
 | `asset_identifiers` | **Solves the identity problem**: an IBKR contract (`conid`), an ISIN, and a Yahoo Finance ticker are three different names for the same asset. `(scheme, value) -> asset_id`, schemes `IBKR_CONID` / `ISIN` / `YFINANCE` / `USER`. Market data refresh ONLY ever resolves a symbol via the `YFINANCE` row — never guesses from `assets.symbol` directly — so a wrong guess never silently misprices a position. Assets without a confirmed `YFINANCE` identifier are flagged `assets.needs_mapping` and surfaced in the Accounts page for a human to resolve. |
 | `accounts` | `source = 'api' \| 'manual'` is the ONLY thing that distinguishes an Interactive Brokers account from a hand-entered MyInvestor one — everything downstream (holdings, transactions, valuation) is identical either way. Don't add a broker-specific table; add a `source` value instead. |
 | `holdings` | Current position snapshot per account+asset — overwritten wholesale on every API sync (`replace_holdings_for_account`), upserted individually for manual entry. |
@@ -42,6 +42,9 @@ is just a string column) — both are complexity this app doesn't need yet.
 | `prices` / `quotes` | Daily bars and latest tick, per asset. **Never populated inside a request** — only `RefreshMarketDataUseCase` writes here; the read API only ever selects from these tables. This is what makes an unreliable upstream (yfinance) tolerable: a slow/broken refresh degrades to stale data, never a hung page load. |
 | `fx_rates` | Daily historical closes, `(date, base, quote)`. Deliberately never "today's rate" applied retroactively — see `backend/AGENTS.md`'s FX note. |
 | `position_snapshots` / `portfolio_snapshots` | The dashboard's history. Fully derived, fully rebuildable from `transactions` + `prices` + `fx_rates` at any time via `POST /api/snapshots/rebuild` — never hand-edit these tables, just rebuild. |
+| `asset_resolutions` | One row per attempt to decide which market-data listing prices a `needs_mapping` asset (see `backend/AGENTS.md`'s security resolver section and `plans/agentic_asset_mapping.md`). `uq_asset_resolutions_open` (a partial unique index, hand-written in migration `0002` — autogenerate can't express it) keeps at most one non-`SUPERSEDED` resolution per asset; a retry supersedes the old one rather than updating it in place, so the history of attempts survives. |
+| `resolution_candidates` | Every listing considered for a resolution, with the exact feature values (`features` jsonb) and `score` used to rank it at decision time — this is also the dataset a future ML ranker (Phase 7 of the plan) would train on, so nothing here gets recomputed or overwritten after the fact. |
+| `agent_runs` | One row per local-LLM agent invocation for a resolution (Phase 6 of the plan — not built yet). `tool_calls` jsonb is the full transcript, for audit and for the offline evaluation harness. |
 
 `assets.symbol` and `assets.name` have a `pg_trgm` GIN index (from
 `database/init/01-extensions.sql` + the initial migration) backing the

@@ -11,7 +11,13 @@ from app.adapters.brokers.ibkr import IBKRAdapter
 from app.adapters.brokers.ibkr_flex import IBKRFlexAdapter
 from app.adapters.market_data.fx_adapter import YFinanceFxRates
 from app.adapters.market_data.yfinance_adapter import YFinanceMarketData
-from app.adapters.persistence.repositories import SqlAssetRepo, SqlMarketDataRepo, SqlPortfolioRepo
+from app.adapters.persistence.repositories import (
+    SqlAssetRepo,
+    SqlMarketDataRepo,
+    SqlPortfolioRepo,
+    SqlResolutionRepo,
+)
+from app.adapters.security_master.openfigi_adapter import OpenFigiSecurityMaster
 from app.application.asset_chart import GetAssetChartUseCase
 from app.application.build_snapshots import BuildSnapshotsUseCase
 from app.application.import_transactions import CsvImportUseCase, ImportStatementUseCase
@@ -20,6 +26,7 @@ from app.application.opening_balance import SuggestOpeningBalanceUseCase
 from app.application.query_asset import QueryAssetUseCase
 from app.application.query_portfolio import QueryPortfolioUseCase
 from app.application.refresh_market_data import RefreshMarketDataUseCase
+from app.application.resolve_security import ResolveSecurityUseCase
 from app.application.search_assets import SearchAssetsUseCase
 from app.application.sync_broker import SyncBrokerUseCase
 from app.config import settings
@@ -39,6 +46,10 @@ def portfolio_repo(db: Session) -> SqlPortfolioRepo:
 
 def market_data_repo(db: Session) -> SqlMarketDataRepo:
     return SqlMarketDataRepo(db)
+
+
+def resolution_repo(db: Session) -> SqlResolutionRepo:
+    return SqlResolutionRepo(db)
 
 
 def build_sync_broker_use_case(db: Session, broker_key: str) -> SyncBrokerUseCase:
@@ -62,7 +73,7 @@ def build_manual_entry_use_case(db: Session) -> ManualEntryUseCase:
 
 
 def build_map_asset_use_case(db: Session) -> MapAssetUseCase:
-    return MapAssetUseCase(asset_repo(db), YFinanceMarketData())
+    return MapAssetUseCase(asset_repo(db), YFinanceMarketData(), resolution_repo(db))
 
 
 def build_suggest_opening_balance_use_case(db: Session) -> SuggestOpeningBalanceUseCase:
@@ -93,3 +104,14 @@ def build_search_assets_use_case(db: Session) -> SearchAssetsUseCase:
 
 def build_asset_chart_use_case(db: Session) -> GetAssetChartUseCase:
     return GetAssetChartUseCase(asset_repo(db), YFinanceMarketData())
+
+
+def build_resolve_security_use_case(db: Session) -> ResolveSecurityUseCase:
+    return ResolveSecurityUseCase(
+        asset_repo(db),
+        portfolio_repo(db),
+        resolution_repo(db),
+        OpenFigiSecurityMaster(settings.openfigi_api_key),
+        YFinanceMarketData(),
+        settings.agent_enabled,
+    )

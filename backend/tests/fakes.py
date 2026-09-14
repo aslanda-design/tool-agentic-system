@@ -1,8 +1,8 @@
-"""Minimal in-memory stand-ins for AssetRepo/PortfolioRepo, covering only the
-methods CsvImportUseCase actually calls. Not full ABC implementations —
-duck-typed on purpose so the import tests stay fast and DB-free (see
-backend/AGENTS.md: `backend/tests/` needs a running Postgres only for
-test_health.py's TestClient; these must not)."""
+"""Minimal in-memory stand-ins for AssetRepo/PortfolioRepo/ResolutionRepo,
+covering only the methods the use cases under test actually call. Not full
+ABC implementations — duck-typed on purpose so these tests stay fast and
+DB-free (see backend/AGENTS.md: `backend/tests/` needs a running Postgres
+only for test_health.py's TestClient and the *_sql.py tests; these must not)."""
 
 from __future__ import annotations
 
@@ -10,6 +10,14 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 
+from app.domain.errors import AssetConflictError, AssetNotFoundError, ResolutionNotFoundError
+from app.domain.listings import (
+    AgentRunRecord,
+    Candidate,
+    ResolutionContext,
+    ResolutionDTO,
+    ResolutionStatus,
+)
 from app.domain.models import (
     Account,
     AccountSource,
@@ -89,6 +97,35 @@ class FakeAssetRepo:
 
     def list_all(self) -> list[Asset]:
         return list(self._assets.values())
+
+    def apply_listing(
+        self,
+        asset_id: int,
+        yahoo_symbol: str,
+        currency: str,
+        mic: str | None,
+        asset_class: AssetClass | None,
+        share_class_figi: str | None,
+    ) -> None:
+        conflict_id = self._by_identifier.get((IdentifierScheme.YFINANCE, yahoo_symbol))
+        if conflict_id is not None and conflict_id != asset_id:
+            raise AssetConflictError(f"{yahoo_symbol!r} is already mapped to asset {conflict_id}")
+        asset = self._assets.get(asset_id)
+        if asset is None:
+            raise AssetNotFoundError(f"Asset {asset_id} not found")
+
+        # drop this asset's other YFINANCE identifiers — one pricing listing per asset
+        for key in [k for k, v in self._by_identifier.items() if k[0] == IdentifierScheme.YFINANCE and v == asset_id]:
+            del self._by_identifier[key]
+        self._by_identifier[(IdentifierScheme.YFINANCE, yahoo_symbol)] = asset_id
+
+        asset.currency = currency.upper()
+        asset.exchange = mic
+        asset.needs_mapping = False
+        if asset_class is not None:
+            asset.asset_class = asset_class
+        if share_class_figi is not None:
+            asset.share_class_figi = share_class_figi
 
 
 @dataclass
@@ -246,3 +283,107 @@ class FakePortfolioRepo:
     def earliest_transaction_date(self, account_id: int | None = None) -> date | None:
         rows = self.list_transactions(account_id=account_id)
         return min((t.trade_date for t in rows), default=None)
+
+
+@dataclass
+class _ResolutionRow:
+    id: int
+    asset_id: int
+    context: ResolutionContext
+    status: ResolutionStatus
+    decided_by: str | None
+    note: str
+    scorer_version: str
+    candidates: list[Candidate]
+
+
+class FakeResolutionRepo:
+    """In-memory ResolutionRepo — see module docstring. Candidates are
+    stored by reference (not copied), matching SqlResolutionRepo's contract
+    of backfilling `.id` onto the caller's own Candidate objects."""
+
+    def __init__(self) -> None:
+        self._resolutions: dict[int, _ResolutionRow] = {}
+        self._selected: dict[int, int] = {}  # resolution_id -> selected candidate_id
+        self._next_resolution_id = 1
+        self._next_candidate_id = 1
+        self.agent_runs: list[AgentRunRecord] = []
+
+    def create(
+        self,
+        ctx: ResolutionContext,
+        status: ResolutionStatus,
+        decided_by: str | None,
+        note: str,
+        scorer_version: str,
+        candidates: list[Candidate],
+    ) -> int:
+        rid = self._next_resolution_id
+        self._next_resolution_id += 1
+        for candidate in candidates:
+            candidate.id = self._next_candidate_id
+            self._next_candidate_id += 1
+        self._resolutions[rid] = _ResolutionRow(rid, ctx.asset_id, ctx, status, decided_by, note, scorer_version, list(candidates))
+        return rid
+
+    def get(self, resolution_id: int) -> ResolutionDTO | None:
+        row = self._resolutions.get(resolution_id)
+        if row is None:
+            return None
+        return ResolutionDTO(
+            id=row.id,
+            asset_id=row.asset_id,
+            context=row.context,
+            status=row.status,
+            decided_by=row.decided_by,
+            note=row.note,
+            scorer_version=row.scorer_version,
+            candidates=list(row.candidates),
+            selected_candidate_id=self._selected.get(row.id),
+        )
+
+    def get_open_for_asset(self, asset_id: int) -> ResolutionDTO | None:
+        for row in self._resolutions.values():
+            if row.asset_id == asset_id and row.status is not ResolutionStatus.SUPERSEDED:
+                return self.get(row.id)
+        return None
+
+    def list_by_status(self, statuses: list[ResolutionStatus], limit: int = 50) -> list[ResolutionDTO]:
+        matches = [row for row in self._resolutions.values() if row.status in statuses]
+        return [self.get(row.id) for row in matches[:limit]]
+
+    def add_candidate(self, resolution_id: int, candidate: Candidate) -> int:
+        row = self._resolutions[resolution_id]
+        candidate.id = self._next_candidate_id
+        self._next_candidate_id += 1
+        row.candidates.append(candidate)
+        return candidate.id
+
+    def set_status(self, resolution_id: int, status: ResolutionStatus, decided_by: str | None, note: str) -> None:
+        row = self._resolutions.get(resolution_id)
+        if row is None:
+            raise ResolutionNotFoundError(f"Resolution {resolution_id} not found")
+        row.status = status
+        row.decided_by = decided_by
+        row.note = note
+
+    def select_candidate(self, resolution_id: int, candidate_id: int) -> None:
+        self._selected[resolution_id] = candidate_id
+
+    def supersede_open(self, asset_id: int) -> None:
+        for row in self._resolutions.values():
+            if row.asset_id == asset_id and row.status is not ResolutionStatus.SUPERSEDED:
+                row.status = ResolutionStatus.SUPERSEDED
+
+    def add_agent_run(self, run: AgentRunRecord) -> int:
+        self.agent_runs.append(run)
+        return len(self.agent_runs)
+
+    def list_assets_to_resolve(self, retry_empty_after_hours: int = 24) -> list[int]:
+        raise NotImplementedError("not needed by tests using this fake yet")
+
+    def list_recent(self, since, decided_by=None, limit: int = 100):
+        rows = [r for r in self._resolutions.values() if r.status is not ResolutionStatus.SUPERSEDED]
+        if decided_by:
+            rows = [r for r in rows if r.decided_by in decided_by]
+        return [self.get(r.id) for r in rows[:limit]]

@@ -8,8 +8,10 @@ import { Input, Select } from '../../components/ui/Input'
 import { TBody, TD, TH, THead, TR, Table } from '../../components/ui/Table'
 import { endpoints } from '../../lib/api/endpoints'
 import {
+  useAcceptResolutionCandidate,
   useAccounts,
   useAddManualTransaction,
+  useAddResolutionCandidate,
   useCommitImport,
   useCreateManualAccount,
   useImportFlexHistory,
@@ -17,13 +19,16 @@ import {
   useMapSuggestions,
   useOpeningBalanceSuggestion,
   usePositions,
+  useRecentResolutions,
+  useResolutions,
+  useResolveAssetNow,
   useSyncBroker,
   useSyncStatus,
   useUnmappedAssets,
   useUpsertManualHolding,
 } from '../../lib/api/hooks'
-import type { ImportPreview } from '../../lib/api/types'
-import { formatDate } from '../../lib/format'
+import type { CandidateFeatures, ImportPreview, Resolution, ResolutionCandidate } from '../../lib/api/types'
+import { formatDate, formatMoney } from '../../lib/format'
 
 const TRANSACTION_TYPES = ['BUY', 'SELL', 'DIVIDEND', 'FEE', 'INTEREST', 'DEPOSIT', 'WITHDRAWAL']
 
@@ -104,6 +109,8 @@ export function AccountsPage() {
         <AddAccountCard />
         <AssetMappingCard />
       </div>
+
+      <ResolutionsCard />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <AddHoldingCard accountIds={accounts.data?.map((a) => a.id) ?? []} />
@@ -204,6 +211,246 @@ function AssetMappingRow({ assetId, symbol }: { assetId: number; symbol: string 
         </Button>
       </div>
       {mapAsset.isError && <p className="mt-1 text-xs text-negative">{(mapAsset.error as Error).message}</p>}
+    </div>
+  )
+}
+
+// --- Security resolver (see plans/agentic_asset_mapping.md) ---------------
+//
+// Distinct from AssetMappingCard above: that card is the manual fallback
+// (free-text search -> pick a ticker) that's always worked. This card shows
+// what the deterministic resolver (OpenFIGI + rule-based scoring) has
+// found — its candidates, their scores/features, and lets you accept one,
+// add a ticker it missed, or retry. An asset can show up in both cards
+// until the frontend fully moves over to this one.
+
+function ResolutionsCard() {
+  const needsReview = useResolutions() // default: NEEDS_REVIEW + NEEDS_AGENT
+  const recent = useRecentResolutions(['rules', 'agent'])
+  const unmapped = useUnmappedAssets()
+  const resolveNow = useResolveAssetNow()
+
+  const attemptedAssetIds = new Set((needsReview.data ?? []).map((r) => r.asset_id))
+  const notYetAttempted = (unmapped.data ?? []).filter((a) => !attemptedAssetIds.has(a.id))
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Security resolver</CardTitle>
+      </CardHeader>
+      <CardBody className="space-y-4">
+        {notYetAttempted.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted">Not yet attempted</p>
+            {notYetAttempted.map((asset) => (
+              <div key={asset.id} className="flex items-center justify-between rounded-lg border border-border p-2.5">
+                <div>
+                  <div className="text-sm font-medium text-text">{asset.symbol}</div>
+                  {asset.isin && asset.isin !== asset.symbol && (
+                    <div className="text-xs text-muted">{asset.isin}</div>
+                  )}
+                </div>
+                <Button disabled={resolveNow.isPending} onClick={() => resolveNow.mutate(asset.id)}>
+                  Resolve now
+                </Button>
+              </div>
+            ))}
+            {resolveNow.isError && <p className="text-xs text-negative">{(resolveNow.error as Error).message}</p>}
+          </div>
+        )}
+
+        <div className="space-y-2">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted">Needs review</p>
+          {!needsReview.data || needsReview.data.length === 0 ? (
+            <p className="text-sm text-muted">Nothing waiting on a decision.</p>
+          ) : (
+            needsReview.data.map((resolution) => <ResolutionReviewRow key={resolution.id} resolution={resolution} />)
+          )}
+        </div>
+
+        {recent.data && recent.data.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted">Recently automated</p>
+            {recent.data.map((resolution) => (
+              <RecentResolutionRow key={resolution.id} resolution={resolution} />
+            ))}
+          </div>
+        )}
+      </CardBody>
+    </Card>
+  )
+}
+
+/** Compact "cur✓ exch½ sym✓ liq✓" summary of a candidate's scoring features. */
+function featureSummary(features: CandidateFeatures): string {
+  const mark = (v: boolean | number) => (v === true || v === 1 ? '✓' : v === 0.5 ? '½' : '✗')
+  return `cur${mark(features.currency_match)} exch${mark(features.exchange_match)} sym${mark(features.symbol_match)} liq${mark(features.most_liquid)}`
+}
+
+function CandidateRow({
+  candidate,
+  action,
+}: {
+  candidate: ResolutionCandidate
+  action: { label: string; disabled: boolean; onClick: () => void }
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-border bg-surface-raised px-2.5 py-1.5 text-xs">
+      <span className="font-medium text-text">{candidate.symbol}</span>
+      {candidate.mic && <span className="text-muted">{candidate.mic}</span>}
+      {candidate.info?.currency && <span className="text-muted">{candidate.info.currency}</span>}
+      {candidate.info?.last_close != null && candidate.info.currency && (
+        <span className="text-muted">
+          {formatMoney(candidate.info.last_close, candidate.info.currency)}
+          {candidate.info.last_trade_date ? ` · ${formatDate(candidate.info.last_trade_date)}` : ''}
+        </span>
+      )}
+      {!candidate.features.has_recent_price && <Badge tone="negative">stale</Badge>}
+      <span className="text-muted">score {candidate.score}</span>
+      <span className="font-mono text-muted" title="currency / exchange / symbol / most-liquid match">
+        {featureSummary(candidate.features)}
+      </span>
+      <Button className="ml-auto" disabled={action.disabled} onClick={action.onClick}>
+        {action.label}
+      </Button>
+    </div>
+  )
+}
+
+function ResolutionReviewRow({ resolution }: { resolution: Resolution }) {
+  const accept = useAcceptResolutionCandidate()
+  const addCandidate = useAddResolutionCandidate()
+  const resolveNow = useResolveAssetNow()
+  const [manualSymbol, setManualSymbol] = useState('')
+
+  const { context } = resolution
+  const candidates = [...resolution.candidates].sort((a, b) => b.score - a.score)
+
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <div>
+          <span className="text-sm font-medium text-text">{context.broker_symbol}</span>
+          {context.isin && context.isin !== context.broker_symbol && (
+            <span className="ml-2 text-xs text-muted">{context.isin}</span>
+          )}
+          <span className="ml-2 text-xs text-muted">{context.currency}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge tone={resolution.status === 'NEEDS_AGENT' ? 'accent' : 'neutral'}>{resolution.status}</Badge>
+          <Button
+            variant="ghost"
+            disabled={resolveNow.isPending}
+            onClick={() => resolveNow.mutate(context.asset_id)}
+          >
+            Retry
+          </Button>
+        </div>
+      </div>
+      {resolution.note && <p className="mb-2 text-xs text-muted">{resolution.note}</p>}
+      <div className="space-y-1.5">
+        {candidates.length === 0 && <p className="text-xs text-muted">No candidates found yet.</p>}
+        {candidates.map((candidate) => (
+          <CandidateRow
+            key={candidate.symbol}
+            candidate={candidate}
+            action={{
+              label: 'Accept',
+              disabled: !candidate.id || !candidate.features.has_recent_price || accept.isPending,
+              onClick: () => {
+                if (candidate.id) accept.mutate({ resolutionId: resolution.id, candidateId: candidate.id })
+              },
+            }}
+          />
+        ))}
+      </div>
+      <div className="mt-2 flex gap-2">
+        <Input
+          placeholder="Add a yfinance ticker it missed"
+          value={manualSymbol}
+          onChange={(e) => setManualSymbol(e.target.value)}
+          className="flex-1"
+        />
+        <Button
+          disabled={!manualSymbol || addCandidate.isPending}
+          onClick={() => {
+            addCandidate.mutate({ resolutionId: resolution.id, symbol: manualSymbol })
+            setManualSymbol('')
+          }}
+        >
+          Add
+        </Button>
+      </div>
+      {accept.isError && <p className="mt-1 text-xs text-negative">{(accept.error as Error).message}</p>}
+      {addCandidate.isError && <p className="mt-1 text-xs text-negative">{(addCandidate.error as Error).message}</p>}
+    </div>
+  )
+}
+
+function RecentResolutionRow({ resolution }: { resolution: Resolution }) {
+  // "Change" reuses the plain map endpoint (not accept()) — accept() only
+  // works on a still-open resolution, and this one is already decided (see
+  // ResolveSecurityUseCase.accept's terminal-status guard). Mapping a
+  // different candidate here also records the correction as a
+  // RESOLVED_BY_USER pick, same as any other manual map.
+  const mapAsset = useMapAsset()
+  const [expanded, setExpanded] = useState(false)
+  const [manualSymbol, setManualSymbol] = useState('')
+  const selected = resolution.candidates.find((c) => c.id === resolution.selected_candidate_id)
+
+  return (
+    <div className="rounded-lg border border-border p-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <span className="text-sm font-medium text-text">{resolution.context.broker_symbol}</span>
+          <span className="ml-2 text-xs text-muted">→ {selected?.symbol ?? '—'}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge tone={resolution.decided_by === 'agent' ? 'accent' : 'positive'}>{resolution.decided_by ?? 'rules'}</Badge>
+          <Button variant="ghost" onClick={() => setExpanded((v) => !v)}>
+            {expanded ? 'Hide' : 'Change'}
+          </Button>
+        </div>
+      </div>
+      {resolution.note && <p className="mt-1 text-xs text-muted">{resolution.note}</p>}
+      {expanded && (
+        <div className="mt-2 space-y-1.5">
+          {resolution.candidates.map((candidate) => (
+            <CandidateRow
+              key={candidate.symbol}
+              candidate={candidate}
+              action={
+                candidate.id === resolution.selected_candidate_id
+                  ? { label: 'Current', disabled: true, onClick: () => {} }
+                  : {
+                      label: 'Use this',
+                      disabled: mapAsset.isPending,
+                      onClick: () =>
+                        mapAsset.mutate({ assetId: resolution.asset_id, yfinanceSymbol: candidate.symbol }),
+                    }
+              }
+            />
+          ))}
+          <div className="flex gap-2">
+            <Input
+              placeholder="Or enter a yfinance ticker"
+              value={manualSymbol}
+              onChange={(e) => setManualSymbol(e.target.value)}
+              className="flex-1"
+            />
+            <Button
+              disabled={!manualSymbol || mapAsset.isPending}
+              onClick={() => {
+                mapAsset.mutate({ assetId: resolution.asset_id, yfinanceSymbol: manualSymbol })
+                setManualSymbol('')
+              }}
+            >
+              Use
+            </Button>
+          </div>
+          {mapAsset.isError && <p className="text-xs text-negative">{(mapAsset.error as Error).message}</p>}
+        </div>
+      )}
     </div>
   )
 }

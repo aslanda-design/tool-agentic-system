@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 
+from app.domain.listings import ListingInfo
+
 
 @dataclass(slots=True)
 class QuoteData:
@@ -52,7 +54,10 @@ class AssetSearchResult:
     name: str
     exchange: str | None
     asset_class: str
-    currency: str
+    # None when the upstream source didn't report a currency — callers must
+    # decide their own fallback rather than have one silently baked in here
+    # (see SearchAssetsUseCase, which defaults to USD when creating an asset).
+    currency: str | None
 
 
 class MarketDataPort(ABC):
@@ -75,6 +80,16 @@ class MarketDataPort(ABC):
     @abstractmethod
     def search(self, query: str) -> list[AssetSearchResult]:
         """Free-text symbol/name search against the market data source."""
+
+    @abstractmethod
+    def get_listing_info(self, symbol: str) -> ListingInfo | None:
+        """Validate a candidate symbol and describe it: currency (already
+        normalized — see yfinance_adapter's minor-unit handling), last close,
+        last trade date, recent average volume. None if the symbol doesn't
+        exist or has no recent price history. Used by the security resolver
+        (application/resolve_security.py) to check candidates before they
+        can be scored or saved — never called from a request handler except
+        the resolver's own explicit "resolve now" action."""
 
 
 class FxRatePort(ABC):

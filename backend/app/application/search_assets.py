@@ -67,7 +67,11 @@ class SearchAssetsUseCase:
                     symbol=hit.symbol,
                     name=hit.name,
                     asset_class=asset_class,
-                    currency=hit.currency,
+                    # yfinance doesn't always report a currency for a search
+                    # hit — USD is the least-wrong fallback for a brand-new
+                    # asset (the user immediately sees the real value on the
+                    # asset page once a quote is fetched, or can correct it).
+                    currency=hit.currency or "USD",
                     exchange=hit.exchange,
                 )
                 self.asset_repo.add_identifier(asset.id, IdentifierScheme.YFINANCE, hit.symbol)

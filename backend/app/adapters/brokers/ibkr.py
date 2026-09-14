@@ -75,6 +75,7 @@ class IBKRAdapter(BrokerPort):
                         last_price=Decimal(str(item.marketPrice)),
                         currency=contract.currency or "USD",
                         ibkr_conid=str(contract.conId) if contract.conId else None,
+                        exchange=contract.primaryExchange or None,
                     )
                 )
 
@@ -104,6 +105,8 @@ class IBKRAdapter(BrokerPort):
                         currency=fill.contract.currency or "USD",
                         executed_at=fill.execution.time,
                         ibkr_conid=str(fill.contract.conId) if fill.contract.conId else None,
+                        exchange=fill.contract.primaryExchange or None,
+                        name=fill.contract.localSymbol or None,
                     )
                 )
 

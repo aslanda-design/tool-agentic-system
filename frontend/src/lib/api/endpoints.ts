@@ -11,6 +11,9 @@ import type {
   OpeningBalanceSuggestion,
   Position,
   PortfolioSummary,
+  Resolution,
+  ResolutionCandidate,
+  ResolutionStatus,
   SearchResult,
   SyncResult,
   SyncStatus,
@@ -95,4 +98,25 @@ export const endpoints = {
 
   refreshMarketData: () => api.post<{ quotes: number; history: number; fx_pairs: number }>('/market-data/refresh'),
   rebuildSnapshots: () => api.post<{ days_written: number }>('/snapshots/rebuild'),
+
+  // --- Security resolver (see plans/agentic_asset_mapping.md) -------------
+
+  resolveAssetNow: (assetId: number) => api.post<Resolution>(`/assets/${assetId}/resolve`),
+
+  // Defaults (no `statuses` arg) to the backend's own default: NEEDS_REVIEW + NEEDS_AGENT.
+  listResolutions: (statuses?: ResolutionStatus[]) =>
+    api.get<Resolution[]>(`/resolutions${statuses && statuses.length > 0 ? `?status=${statuses.join(',')}` : ''}`),
+  recentResolutions: (decidedBy?: string[], days = 14) =>
+    api.get<Resolution[]>(
+      `/resolutions/recent?days=${days}${decidedBy && decidedBy.length > 0 ? `&decided_by=${decidedBy.join(',')}` : ''}`,
+    ),
+  resolution: (resolutionId: number) => api.get<Resolution>(`/resolutions/${resolutionId}`),
+  acceptResolutionCandidate: (resolutionId: number, candidateId: number, note = '') =>
+    api.post<Resolution>(`/resolutions/${resolutionId}/accept`, { candidate_id: candidateId, note }),
+  // The response is a bare Candidate, not a Resolution — see
+  // api/routes/resolutions.py::add_resolution_candidate.
+  addResolutionCandidate: (resolutionId: number, symbol: string) =>
+    api.post<ResolutionCandidate>(`/resolutions/${resolutionId}/candidates`, { symbol }),
+  flagResolutionForReview: (resolutionId: number, note = '') =>
+    api.post<Resolution>(`/resolutions/${resolutionId}/flag-for-review`, { note }),
 }

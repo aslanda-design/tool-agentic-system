@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 from app import container
 from app.adapters.persistence.session import get_db
 from app.api.schemas import AssetUpdateRequest, MapAssetRequest
-from app.domain.errors import AssetConflictError, AssetNotFoundError
+from app.domain.errors import AssetConflictError, AssetNotFoundError, ListingNotFoundError
+from app.domain.listings import ResolutionStatus
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
@@ -28,7 +29,14 @@ def suggest_asset_mapping(asset_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{asset_id}/map")
 def map_asset(asset_id: int, request: MapAssetRequest, db: Session = Depends(get_db)):
-    container.build_map_asset_use_case(db).resolve(asset_id, request.yfinance_symbol)
+    try:
+        container.build_map_asset_use_case(db).resolve(asset_id, request.yfinance_symbol)
+    except ListingNotFoundError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except AssetConflictError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     db.commit()
     # Pull quotes/history for the newly-mapped ticker right away rather than
     # making the user wait for the next scheduled refresh (up to 15 min).
@@ -37,6 +45,26 @@ def map_asset(asset_id: int, request: MapAssetRequest, db: Session = Depends(get
     container.build_snapshots_use_case(db).execute()
     db.commit()
     return {"status": "ok"}
+
+
+@router.post("/{asset_id}/resolve")
+def resolve_asset_now(asset_id: int, db: Session = Depends(get_db)):
+    """Run the security resolver (application/resolve_security.py) for one
+    asset right now, rather than waiting for the background job (see
+    adapters/scheduler.py). An explicit, infrequent user action — makes
+    real OpenFIGI/Yahoo calls, which is why this isn't triggered from a
+    plain page load. Refreshes market data and rebuilds snapshots
+    immediately when the rules auto-accept a listing."""
+    if container.asset_repo(db).get(asset_id) is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    resolution = container.build_resolve_security_use_case(db).resolve_asset(asset_id)
+    db.commit()
+    if resolution.status is ResolutionStatus.AUTO_ACCEPTED:
+        container.build_refresh_market_data_use_case(db).refresh_all()
+        db.commit()
+        container.build_snapshots_use_case(db).execute()
+        db.commit()
+    return resolution
 
 
 @router.get("/{asset_id}")

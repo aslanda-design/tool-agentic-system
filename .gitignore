@@ -29,3 +29,6 @@ frontend/.vite/
 !.vscode/extensions.json
 .DS_Store
 Thumbs.db
+
+# plans
+plans/

@@ -8,7 +8,22 @@ class AssetNotFoundError(DomainError):
 
 class AssetConflictError(DomainError):
     """Raised when editing an asset's symbol/ISIN would collide with another
-    asset's unique symbol/ISIN."""
+    asset's unique symbol/ISIN, or when apply_listing's target Yahoo symbol
+    already belongs to a different asset (see ports/repositories.py)."""
+
+
+class ListingNotFoundError(DomainError):
+    """Raised when a candidate market-data symbol doesn't exist, or exists
+    but has no currency we can price it in (see MarketDataPort.get_listing_info)."""
+
+    def __init__(self, symbol: str) -> None:
+        super().__init__(f"{symbol!r} isn't a valid, priceable listing")
+        self.symbol = symbol
+
+
+class ResolutionNotFoundError(DomainError):
+    """Raised when an asset_resolutions id doesn't exist (see
+    application/resolve_security.py)."""
 
 
 class AccountNotFoundError(DomainError):
