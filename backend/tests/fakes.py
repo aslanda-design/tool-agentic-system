@@ -7,7 +7,7 @@ only for test_health.py's TestClient and the *_sql.py tests; these must not)."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from app.domain.errors import AssetConflictError, AssetNotFoundError, ResolutionNotFoundError
@@ -23,7 +23,10 @@ from app.domain.models import (
     AccountSource,
     Asset,
     AssetClass,
+    ChatMessage,
+    ChatSession,
     IdentifierScheme,
+    Note,
     Transaction,
 )
 
@@ -143,12 +146,18 @@ class _HoldingRow:
 
 
 class FakePortfolioRepo:
-    def __init__(self) -> None:
+    def __init__(self, asset_repo: FakeAssetRepo | None = None) -> None:
+        # asset_repo is optional and only needed by list_positions (which
+        # joins holdings -> assets, same as SqlPortfolioRepo's real query,
+        # to fill in symbol/name/currency) — most existing tests never call
+        # list_positions and construct this with no arguments.
+        self._asset_repo = asset_repo
         self._accounts: dict[int, Account] = {}
         self._next_account_id = 1
         self._transactions: list[Transaction] = []
         self._next_txn_id = 1
         self._holdings: dict[tuple[int, int], _HoldingRow] = {}
+        self._cash_balances: dict[tuple[int, str], dict] = {}
 
     def get_or_create_account(
         self, broker_key: str, external_id: str, name: str, currency: str, source: str
@@ -202,13 +211,44 @@ class FakePortfolioRepo:
         return None if row is None else vars(row)
 
     def list_positions(self, account_id: int | None = None) -> list[dict]:
-        return [vars(h) for h in self._holdings.values() if account_id is None or h.account_id == account_id]
+        """Mirrors SqlPortfolioRepo.list_positions' join + zero-quantity
+        filter (see app/adapters/persistence/repositories.py) rather than
+        the old vars(_HoldingRow) shape, which was missing symbol/name/
+        currency/broker_key — fine when nothing exercised it, wrong once
+        QueryPortfolioUseCase (which reads exactly those keys) is under
+        test against this fake."""
+        rows = []
+        for h in self._holdings.values():
+            if account_id is not None and h.account_id != account_id:
+                continue
+            if h.quantity == Decimal("0"):
+                continue
+            account = self._accounts.get(h.account_id)
+            asset = self._asset_repo.get(h.asset_id) if self._asset_repo else None
+            rows.append(
+                {
+                    "asset_id": h.asset_id,
+                    "symbol": asset.symbol if asset else f"asset-{h.asset_id}",
+                    "name": asset.name if asset else "",
+                    "currency": asset.currency if asset else h.cost_currency,
+                    "account_id": h.account_id,
+                    "broker_key": account.broker_key if account else "unknown",
+                    "quantity": h.quantity,
+                    "avg_cost_price": h.avg_cost_price,
+                }
+            )
+        return rows
 
     def upsert_cash_balance(self, account_id: int, currency: str, amount: Decimal, as_of: datetime) -> None:
-        pass
+        self._cash_balances[(account_id, currency.upper())] = {
+            "account_id": account_id,
+            "currency": currency.upper(),
+            "amount": amount,
+            "as_of": as_of,
+        }
 
     def list_cash_balances(self, account_id: int | None = None) -> list[dict]:
-        return []
+        return [b for b in self._cash_balances.values() if account_id is None or b["account_id"] == account_id]
 
     def add_transactions(self, transactions: list[Transaction]) -> int:
         if not transactions:
@@ -390,3 +430,139 @@ class FakeResolutionRepo:
         if decided_by:
             rows = [r for r in rows if r.decided_by in decided_by]
         return [self.get(r.id) for r in rows[:limit]]
+
+
+class FakeMarketDataRepo:
+    """In-memory MarketDataRepo — see module docstring. Backs
+    application/query_market_data.py and query_analytics.py's tests (Phase
+    8a/8b of plans/agentic_asset_mapping_phase7_8.md)."""
+
+    def __init__(self) -> None:
+        self._quotes: dict[int, dict] = {}
+        self._bars: dict[int, dict[date, dict]] = {}
+        self._fx_rates: dict[tuple[str, str], dict[date, Decimal]] = {}
+
+    def upsert_quote(
+        self, asset_id: int, price: Decimal, prev_close: Decimal | None, currency: str, as_of: datetime, source: str
+    ) -> None:
+        self._quotes[asset_id] = {"price": price, "prev_close": prev_close, "currency": currency.upper(), "as_of": as_of}
+
+    def get_quote(self, asset_id: int) -> dict | None:
+        return self._quotes.get(asset_id)
+
+    def upsert_bars(self, asset_id: int, bars: list[dict], source: str) -> None:
+        by_date = self._bars.setdefault(asset_id, {})
+        for bar in bars:
+            by_date[bar["date"]] = dict(bar)
+
+    def get_bars(self, asset_id: int, start: date, end: date) -> list[dict]:
+        by_date = self._bars.get(asset_id, {})
+        return [bar for d, bar in sorted(by_date.items()) if start <= d <= end]
+
+    def get_price_on_or_before(self, asset_id: int, on_date: date) -> Decimal | None:
+        by_date = self._bars.get(asset_id, {})
+        candidates = [d for d in by_date if d <= on_date]
+        if not candidates:
+            return None
+        return by_date[max(candidates)]["close"]
+
+    def latest_price_date(self, asset_id: int) -> date | None:
+        by_date = self._bars.get(asset_id, {})
+        return max(by_date) if by_date else None
+
+    def upsert_fx_rates(self, base: str, quote: str, rates: dict[date, Decimal]) -> None:
+        self._fx_rates.setdefault((base.upper(), quote.upper()), {}).update(rates)
+
+    def get_fx_rate(self, base: str, quote: str, on_date: date) -> Decimal | None:
+        rates = self._fx_rates.get((base.upper(), quote.upper()), {})
+        candidates = [d for d in rates if d <= on_date]
+        return rates[max(candidates)] if candidates else None
+
+    def currency_pairs_in_use(self, base_currency: str) -> list[str]:
+        return sorted({base for base, quote in self._fx_rates if quote == base_currency.upper() and base != base_currency.upper()})
+
+
+class FakeNoteRepo:
+    """In-memory NoteRepo — see module docstring. Backs
+    ai/mcp_servers/notes/'s tool tests (Phase 8c of
+    plans/agentic_asset_mapping_phase7_8.md)."""
+
+    def __init__(self) -> None:
+        self._notes: dict[int, Note] = {}
+        self._next_id = 1
+
+    def add(self, agent: str, scope: str, title: str, body: str, account_id: int | None = None) -> int:
+        note_id = self._next_id
+        self._next_id += 1
+        self._notes[note_id] = Note(
+            id=note_id, agent=agent, scope=scope, account_id=account_id, title=title, body=body,
+            created_at=datetime.now(timezone.utc), dismissed_at=None,
+        )
+        return note_id
+
+    def list(self, scope: str | None = None, since: datetime | None = None, limit: int = 20) -> list[Note]:
+        rows = sorted(self._notes.values(), key=lambda n: n.created_at, reverse=True)
+        if scope is not None:
+            rows = [n for n in rows if n.scope == scope]
+        if since is not None:
+            rows = [n for n in rows if n.created_at >= since]
+        return rows[:limit]
+
+    def dismiss(self, note_id: int) -> None:
+        note = self._notes.get(note_id)
+        if note is not None:
+            note.dismissed_at = datetime.now(timezone.utc)
+
+
+class FakeChatRepo:
+    """In-memory ChatRepo — see module docstring. Backs
+    ai/agents/portfolio_assistant/'s tests (Phase 8f of
+    plans/agentic_asset_mapping_phase7_8.md)."""
+
+    def __init__(self) -> None:
+        self._sessions: dict[int, ChatSession] = {}
+        self._messages: dict[int, list[ChatMessage]] = {}
+        self._next_session_id = 1
+        self._next_message_id = 1
+
+    def create_session(self, title: str = "") -> int:
+        session_id = self._next_session_id
+        self._next_session_id += 1
+        now = datetime.now(timezone.utc)
+        self._sessions[session_id] = ChatSession(id=session_id, title=title, created_at=now, updated_at=now)
+        self._messages[session_id] = []
+        return session_id
+
+    def list_sessions(self, limit: int = 50) -> list[ChatSession]:
+        return sorted(self._sessions.values(), key=lambda s: s.updated_at, reverse=True)[:limit]
+
+    def get_session(self, session_id: int) -> ChatSession | None:
+        return self._sessions.get(session_id)
+
+    def rename_session(self, session_id: int, title: str) -> None:
+        session = self._sessions.get(session_id)
+        if session is not None:
+            session.title = title
+
+    def delete_session(self, session_id: int) -> None:
+        self._sessions.pop(session_id, None)
+        self._messages.pop(session_id, None)
+
+    def touch_session(self, session_id: int, as_of: datetime | None = None) -> None:
+        session = self._sessions.get(session_id)
+        if session is not None:
+            session.updated_at = as_of or datetime.now(timezone.utc)
+
+    def add_message(self, session_id: int, role: str, content: str, tool_calls: list[dict] | None = None) -> int:
+        message_id = self._next_message_id
+        self._next_message_id += 1
+        message = ChatMessage(
+            id=message_id, session_id=session_id, role=role, content=content,
+            tool_calls=tool_calls, created_at=datetime.now(timezone.utc),
+        )
+        self._messages.setdefault(session_id, []).append(message)
+        return message_id
+
+    def list_messages(self, session_id: int, limit: int | None = None) -> list[ChatMessage]:
+        messages = self._messages.get(session_id, [])
+        return messages[-limit:] if limit is not None else list(messages)

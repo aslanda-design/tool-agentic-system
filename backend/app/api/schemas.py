@@ -67,3 +67,11 @@ class AddCandidateRequest(BaseModel):
 
 class FlagForReviewRequest(BaseModel):
     note: str = ""
+
+
+class CreateChatSessionRequest(BaseModel):
+    title: str = ""
+
+
+class ChatMessageRequest(BaseModel):
+    message: str

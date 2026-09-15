@@ -237,3 +237,38 @@ export interface Resolution {
   candidates: ResolutionCandidate[]
   selected_candidate_id: number | null
 }
+
+// --- portfolio_assistant chat (see plans/agentic_asset_mapping_phase7_8.md Phase 8f) ---
+
+export interface ChatSession {
+  id: number
+  title: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ChatMessage {
+  id: number
+  session_id: number
+  role: 'user' | 'assistant'
+  content: string
+  tool_calls: { name: string; arguments: Record<string, unknown> }[] | null
+  created_at: string
+}
+
+export interface ChatSessionDetail {
+  session: ChatSession
+  messages: ChatMessage[]
+}
+
+// AgentRunResult.status — 'REPLIED' is the normal case; the rest are
+// fallback statuses the assistant still always replies for (see
+// ai/agents/portfolio_assistant/agent.py's _fallback_reply).
+export type ChatRunStatus = 'REPLIED' | 'MAX_STEPS' | 'TIMEOUT' | 'ERROR'
+
+export interface SendChatMessageResult {
+  status: ChatRunStatus
+  reply: string
+  messages: ChatMessage[]
+  error: string | null
+}

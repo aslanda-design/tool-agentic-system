@@ -137,3 +137,101 @@ def test_unknown_tool_call_returns_an_error_without_crashing():
     assert result.tool_calls[0]["name"] == "delete_everything"
     assert result.tool_calls[0]["ok"] is False
     assert "unknown tool" in result.tool_calls[0]["error"]
+
+
+# --- conversational mode (terminal_tools=None) — portfolio_assistant ---
+
+
+def test_conversational_mode_ends_on_the_first_text_only_reply_no_nudge():
+    chat_client = _FakeChatClient([_reply(content="Your portfolio is worth €15,744.")])
+
+    result = asyncio.run(
+        run_agent("system", "user", TOOLS, _ok_call_tool, chat_client, max_steps=5, terminal_tools=None)
+    )
+
+    assert result.status == "REPLIED"
+    assert result.steps == 1
+    assert result.final_message == "Your portfolio is worth €15,744."
+    assert result.error is None
+
+
+def test_conversational_mode_still_calls_tools_before_replying():
+    chat_client = _FakeChatClient(
+        [
+            _reply(tool_calls=[{"name": "validate_listing", "arguments": {"symbol": "AAPL"}}]),
+            _reply(content="AAPL is currently priced at $230.50."),
+        ]
+    )
+
+    result = asyncio.run(
+        run_agent("system", "user", TOOLS, _ok_call_tool, chat_client, max_steps=5, terminal_tools=None)
+    )
+
+    assert result.status == "REPLIED"
+    assert result.steps == 2
+    assert len(result.tool_calls) == 1
+    assert result.final_message == "AAPL is currently priced at $230.50."
+
+
+def test_conversational_mode_still_respects_max_steps():
+    replies = [_reply(tool_calls=[{"name": "validate_listing", "arguments": {}}])] * 3
+    chat_client = _FakeChatClient(replies)
+
+    result = asyncio.run(
+        run_agent("system", "user", TOOLS, _ok_call_tool, chat_client, max_steps=3, terminal_tools=None)
+    )
+
+    assert result.status == "MAX_STEPS"
+
+
+def test_security_resolver_style_call_is_unaffected_by_the_new_default(monkeypatch):
+    """Regression: terminal_tools now defaults to None, but every existing
+    agent passes it explicitly as a dict — confirm the nudge-then-ERROR
+    behavior (not the new conversational ending) still applies when it does."""
+    chat_client = _FakeChatClient([_reply(content="thinking..."), _reply(content="still thinking...")])
+
+    result = asyncio.run(
+        run_agent("system", "user", TOOLS, _ok_call_tool, chat_client, max_steps=5, terminal_tools=TERMINAL)
+    )
+
+    assert result.status == "ERROR"  # not "REPLIED" — terminal_tools was given, so the nudge path still applies
+
+
+# --- history (session memory) — portfolio_assistant ---
+
+
+def test_history_is_replayed_before_the_new_user_message():
+    captured_messages: list[list[dict]] = []
+
+    class _CapturingChatClient:
+        def chat(self, messages, tools):
+            captured_messages.append([dict(m) for m in messages])
+            return _reply(content="ok")
+
+    history = [
+        {"role": "user", "content": "what's my total value?"},
+        {"role": "assistant", "content": "€15,744."},
+    ]
+
+    asyncio.run(
+        run_agent(
+            "system", "and my P&L?", TOOLS, _ok_call_tool, _CapturingChatClient(),
+            max_steps=5, terminal_tools=None, history=history,
+        )
+    )
+
+    first_call = captured_messages[0]
+    assert first_call[0] == {"role": "system", "content": "system"}
+    assert first_call[1] == history[0]
+    assert first_call[2] == history[1]
+    assert first_call[3] == {"role": "user", "content": "and my P&L?"}
+
+
+def test_no_history_behaves_exactly_like_before():
+    chat_client = _FakeChatClient([_reply(content="ok")])
+
+    result = asyncio.run(
+        run_agent("system", "user", TOOLS, _ok_call_tool, chat_client, max_steps=5, terminal_tools=None, history=None)
+    )
+
+    assert result.status == "REPLIED"

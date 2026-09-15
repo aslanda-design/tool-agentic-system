@@ -43,25 +43,36 @@ async def run_agent(
     call_tool: CallTool,
     chat_client: ChatClient,
     max_steps: int,
-    terminal_tools: dict[str, str],
+    terminal_tools: dict[str, str] | None = None,
+    history: list[dict] | None = None,
 ) -> AgentRunResult:
     """Run one tool-calling conversation to completion.
 
-    Stops as soon as a tool named in `terminal_tools` is called and
-    succeeds (its result isn't a `{"error": ...}` dict), returning that
-    tool's mapped status. If the model replies without calling any tool,
-    it's nudged once to finish with a terminal tool; a second text-only
-    reply ends the run as ERROR. Runs at most `max_steps` model turns,
-    ending MAX_STEPS if none of them terminate the run. Does NOT enforce a
-    wall-clock timeout — wrap the call in `asyncio.wait_for` for that (the
-    caller decides the budget, e.g. `settings.agent_timeout_seconds`).
+    Two ways to end depending on `terminal_tools`:
+    - **Given** (a dict — every agent before portfolio_assistant): stops as
+      soon as a tool named in `terminal_tools` is called and succeeds (its
+      result isn't a `{"error": ...}` dict), returning that tool's mapped
+      status. If the model replies without calling any tool, it's nudged
+      once to finish with a terminal tool; a second text-only reply ends
+      the run as ERROR.
+    - **`None`** (conversational agents — e.g. portfolio_assistant): the
+      model's first plain-text reply (no tool call) ends the run
+      immediately with status `"REPLIED"` and that text as
+      `final_message` — no nudge, since a plain-text answer is the whole
+      point for a chat agent, not a failure to finish.
+
+    Either way, runs at most `max_steps` model turns, ending MAX_STEPS if
+    none of them terminate the run. Does NOT enforce a wall-clock timeout —
+    wrap the call in `asyncio.wait_for` for that (the caller decides the
+    budget, e.g. `settings.agent_timeout_seconds`).
 
     Args:
         system_prompt: Fixed instructions (see e.g.
             ai/agents/security_resolver/prompt.md).
         user_message: The one piece of per-run context (e.g. a rendered
-            resolution) — put here rather than fetched via a tool call, so
-            small models can't skip reading it.
+            resolution, or the user's new chat message) — put here rather
+            than fetched via a tool call, so small models can't skip
+            reading it.
         tools: Tool schemas in OpenAI/Groq function-calling shape (see
             ai.common.mcp_client.McpToolSession.tool_schemas).
         call_tool: `async (name, arguments) -> result` — the real MCP
@@ -74,14 +85,24 @@ async def run_agent(
         max_steps: Maximum number of model turns before giving up.
         terminal_tools: Maps a tool name that ends the run to the status to
             report when it succeeds, e.g.
-            `{"save_security_mapping": "SAVED", "flag_for_review": "FLAGGED"}`.
+            `{"save_security_mapping": "SAVED", "flag_for_review": "FLAGGED"}`,
+            or `None` for the conversational ending above.
+        history: Prior turns to replay before `user_message`, as plain
+            `{"role": "user"|"assistant", "content": str}` dicts — no tool
+            calls or tool results, only each past turn's final text
+            (portfolio_assistant's session memory: replaying stale tool
+            *results* from turns ago risks answering from outdated
+            portfolio data, so a past turn's own conclusion is all that
+            gets replayed; the model re-calls a tool if it needs current
+            numbers). `None`/`[]` for a fresh run (every agent before
+            portfolio_assistant).
     """
     started = time.monotonic()
     allowed_names = {t["function"]["name"] for t in tools}
-    messages: list[dict] = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_message},
-    ]
+    messages: list[dict] = [{"role": "system", "content": system_prompt}]
+    if history:
+        messages.extend(history)
+    messages.append({"role": "user", "content": user_message})
     calls: list[dict] = []
     prompt_tokens = completion_tokens = 0
     nudged = False
@@ -106,6 +127,8 @@ async def run_agent(
         messages.append({"role": "assistant", "content": reply["content"], "tool_calls": reply["tool_calls"]})
 
         if not reply["tool_calls"]:
+            if terminal_tools is None:
+                return finish("REPLIED", reply["content"])
             if nudged:
                 return finish("ERROR", reply["content"], error="model stopped without calling a terminal tool")
             nudge = "You must finish by calling one of: " + ", ".join(sorted(terminal_tools)) + "."
@@ -128,7 +151,7 @@ async def run_agent(
                 }
             )
             messages.append({"role": "tool", "tool_name": name, "content": json.dumps(output)})
-            if ok and name in terminal_tools:
+            if ok and terminal_tools and name in terminal_tools:
                 return finish(terminal_tools[name], reply["content"])
 
     return finish("MAX_STEPS")

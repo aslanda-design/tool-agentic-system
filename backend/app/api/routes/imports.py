@@ -7,6 +7,7 @@ from app import container
 from app.adapters.brokers.statement_files.generic import parse_generic_csv
 from app.adapters.brokers.statement_files.myinvestor import parse_myinvestor_file
 from app.adapters.persistence.session import get_db
+from app.config import settings
 from app.domain.errors import StatementParseError
 
 logger = logging.getLogger(__name__)
@@ -73,4 +74,16 @@ async def commit_import(
     # assets pick up a mapping via the scheduled resolver job (see
     # adapters/scheduler.py's run_resolver_job, RESOLVER_INTERVAL_MINUTES)
     # or an explicit POST /api/assets/{id}/resolve.
+    #
+    # import_reviewer, by contrast, is a plain call (not BackgroundTasks)
+    # gated on AGENT_ENABLED (default false, so a plain `pytest` run never
+    # triggers it) — same pattern resolutions.py::request_agent_resolution
+    # already uses for the security-resolver agent. See
+    # plans/agentic_asset_mapping_phase7_8.md §3.7. `await ...arun(...)`,
+    # not the sync `.run()`: this route is itself `async def` (it awaits
+    # UploadFile.read() above), so it's already running on the event loop
+    # — `.run()`'s internal `asyncio.run()` would raise "cannot be called
+    # from a running event loop" here (a real bug this avoids).
+    if settings.agent_enabled:
+        await container.build_import_reviewer_agent().arun(account_id)
     return result

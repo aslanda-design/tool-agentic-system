@@ -26,20 +26,28 @@ from app.domain.models import (
     AccountSource,
     Asset,
     AssetClass,
+    ChatMessage,
+    ChatSession,
     IdentifierScheme,
+    Note,
     PortfolioSnapshotPoint,
     Transaction,
     TransactionType,
 )
+from app.ports.chat import ChatRepo
+from app.ports.notes import NoteRepo
 from app.ports.repositories import AssetRepo, MarketDataRepo, PortfolioRepo, ResolutionRepo
 
 from .orm import (
     AccountORM,
     AgentRunORM,
+    AiNoteORM,
     AssetIdentifierORM,
     AssetORM,
     AssetResolutionORM,
     CashBalanceORM,
+    ChatMessageORM,
+    ChatSessionORM,
     FxRateORM,
     HoldingORM,
     PortfolioSnapshotORM,
@@ -933,3 +941,115 @@ class SqlResolutionRepo(ResolutionRepo):
             stmt.order_by(AssetResolutionORM.decided_at.desc()).limit(limit)
         ).scalars()
         return [_resolution_from_orm(r) for r in rows]
+
+
+def _note_from_orm(row: AiNoteORM) -> Note:
+    return Note(
+        id=row.id,
+        agent=row.agent,
+        scope=row.scope,
+        account_id=row.account_id,
+        title=row.title,
+        body=row.body,
+        created_at=row.created_at,
+        dismissed_at=row.dismissed_at,
+    )
+
+
+class SqlNoteRepo(NoteRepo):
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, agent: str, scope: str, title: str, body: str, account_id: int | None = None) -> int:
+        row = AiNoteORM(agent=agent, scope=scope, account_id=account_id, title=title, body=body)
+        self.session.add(row)
+        self.session.flush()
+        return row.id
+
+    def list(self, scope: str | None = None, since: datetime | None = None, limit: int = 20) -> list[Note]:
+        stmt = select(AiNoteORM)
+        if scope is not None:
+            stmt = stmt.where(AiNoteORM.scope == scope)
+        if since is not None:
+            stmt = stmt.where(AiNoteORM.created_at >= since)
+        rows = self.session.execute(stmt.order_by(AiNoteORM.created_at.desc()).limit(limit)).scalars()
+        return [_note_from_orm(r) for r in rows]
+
+    def dismiss(self, note_id: int) -> None:
+        row = self.session.get(AiNoteORM, note_id)
+        if row is None:
+            return
+        row.dismissed_at = datetime.now(timezone.utc)
+        self.session.flush()
+
+
+def _session_from_orm(row: ChatSessionORM) -> ChatSession:
+    return ChatSession(id=row.id, title=row.title, created_at=row.created_at, updated_at=row.updated_at)
+
+
+def _message_from_orm(row: ChatMessageORM) -> ChatMessage:
+    return ChatMessage(
+        id=row.id, session_id=row.session_id, role=row.role, content=row.content,
+        tool_calls=row.tool_calls, created_at=row.created_at,
+    )
+
+
+class SqlChatRepo(ChatRepo):
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def create_session(self, title: str = "") -> int:
+        row = ChatSessionORM(title=title)
+        self.session.add(row)
+        self.session.flush()
+        return row.id
+
+    def list_sessions(self, limit: int = 50) -> list[ChatSession]:
+        rows = self.session.execute(
+            select(ChatSessionORM).order_by(ChatSessionORM.updated_at.desc()).limit(limit)
+        ).scalars()
+        return [_session_from_orm(r) for r in rows]
+
+    def get_session(self, session_id: int) -> ChatSession | None:
+        row = self.session.get(ChatSessionORM, session_id)
+        return _session_from_orm(row) if row is not None else None
+
+    def rename_session(self, session_id: int, title: str) -> None:
+        row = self.session.get(ChatSessionORM, session_id)
+        if row is None:
+            return
+        row.title = title
+        self.session.flush()
+
+    def delete_session(self, session_id: int) -> None:
+        row = self.session.get(ChatSessionORM, session_id)
+        if row is None:
+            return
+        self.session.delete(row)
+        self.session.flush()
+
+    def touch_session(self, session_id: int, as_of: datetime | None = None) -> None:
+        row = self.session.get(ChatSessionORM, session_id)
+        if row is None:
+            return
+        row.updated_at = as_of or datetime.now(timezone.utc)
+        self.session.flush()
+
+    def add_message(self, session_id: int, role: str, content: str, tool_calls: list[dict] | None = None) -> int:
+        row = ChatMessageORM(session_id=session_id, role=role, content=content, tool_calls=tool_calls)
+        self.session.add(row)
+        self.session.flush()
+        return row.id
+
+    def list_messages(self, session_id: int, limit: int | None = None) -> list[ChatMessage]:
+        stmt = select(ChatMessageORM).where(ChatMessageORM.session_id == session_id)
+        if limit is None:
+            rows = self.session.execute(stmt.order_by(ChatMessageORM.created_at)).scalars()
+            return [_message_from_orm(r) for r in rows]
+        # Most recent `limit`, but returned oldest-first — a plain
+        # ORDER BY ... DESC LIMIT n then reverse in Python, since SQL has no
+        # "last N, ascending" in one clause.
+        rows = self.session.execute(
+            stmt.order_by(ChatMessageORM.created_at.desc()).limit(limit)
+        ).scalars()
+        return [_message_from_orm(r) for r in reversed(list(rows))]

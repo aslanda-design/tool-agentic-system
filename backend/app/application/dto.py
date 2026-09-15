@@ -69,6 +69,62 @@ class AssetDetailDTO:
 
 
 @dataclass(slots=True)
+class AssetSummaryDTO:
+    """A lighter version of AssetDetailDTO with no position — for the
+    market_data MCP server's get_asset tool (application/query_market_data.py),
+    which an agent calls to look up an asset it doesn't hold context for
+    already, not to check a holding it's already looking at."""
+
+    asset_id: int
+    symbol: str
+    name: str
+    exchange: str | None
+    currency: str
+    asset_class: str
+    isin: str | None
+    last_price: Decimal | None
+    prev_close: Decimal | None
+
+
+@dataclass(slots=True)
+class PricePointDTO:
+    date: date
+    close: Decimal
+
+
+@dataclass(slots=True)
+class StalePositionDTO:
+    asset_id: int
+    symbol: str
+    last_price_date: date | None
+
+
+@dataclass(slots=True)
+class UnmappedAssetDTO:
+    asset_id: int
+    symbol: str
+
+
+@dataclass(slots=True)
+class DataFreshnessDTO:
+    as_of: date
+    stale_positions: list[StalePositionDTO]
+    unmapped_assets: list[UnmappedAssetDTO]
+
+
+@dataclass(slots=True)
+class ConcentrationHoldingDTO:
+    symbol: str
+    weight: Decimal
+
+
+@dataclass(slots=True)
+class ConcentrationDTO:
+    holdings: list[ConcentrationHoldingDTO]
+    hhi: Decimal
+
+
+@dataclass(slots=True)
 class SyncResultDTO:
     broker_key: str
     accounts_synced: int

@@ -15,7 +15,9 @@ from app.adapters.market_data.fx_adapter import YFinanceFxRates
 from app.adapters.market_data.yfinance_adapter import YFinanceMarketData
 from app.adapters.persistence.repositories import (
     SqlAssetRepo,
+    SqlChatRepo,
     SqlMarketDataRepo,
+    SqlNoteRepo,
     SqlPortfolioRepo,
     SqlResolutionRepo,
 )
@@ -25,7 +27,9 @@ from app.application.build_snapshots import BuildSnapshotsUseCase
 from app.application.import_transactions import CsvImportUseCase, ImportStatementUseCase
 from app.application.manual_entry import ManualEntryUseCase, MapAssetUseCase
 from app.application.opening_balance import SuggestOpeningBalanceUseCase
+from app.application.query_analytics import QueryAnalyticsUseCase
 from app.application.query_asset import QueryAssetUseCase
+from app.application.query_market_data import QueryMarketDataUseCase
 from app.application.query_portfolio import QueryPortfolioUseCase
 from app.application.refresh_market_data import RefreshMarketDataUseCase
 from app.application.resolve_security import ResolveSecurityUseCase
@@ -34,8 +38,10 @@ from app.application.sync_broker import SyncBrokerUseCase
 from app.config import settings
 
 if TYPE_CHECKING:
-    # Only for the annotation below — see build_security_resolver_agent's
-    # docstring for why the real import is deferred to inside the function.
+    # Only for the annotations below — see build_security_resolver_agent's
+    # docstring for why the real import is deferred to inside each function.
+    from ai.agents.import_reviewer.agent import ImportReviewerAgent
+    from ai.agents.portfolio_assistant.agent import PortfolioAssistantAgent
     from ai.agents.security_resolver.agent import SecurityResolverAgent
 
 BROKER_ADAPTERS = {
@@ -57,6 +63,14 @@ def market_data_repo(db: Session) -> SqlMarketDataRepo:
 
 def resolution_repo(db: Session) -> SqlResolutionRepo:
     return SqlResolutionRepo(db)
+
+
+def note_repo(db: Session) -> SqlNoteRepo:
+    return SqlNoteRepo(db)
+
+
+def chat_repo(db: Session) -> SqlChatRepo:
+    return SqlChatRepo(db)
 
 
 def build_sync_broker_use_case(db: Session, broker_key: str) -> SyncBrokerUseCase:
@@ -105,6 +119,16 @@ def build_query_asset_use_case(db: Session) -> QueryAssetUseCase:
     return QueryAssetUseCase(asset_repo(db), portfolio_repo(db), market_data_repo(db), settings.base_currency)
 
 
+def build_query_market_data_use_case(db: Session) -> QueryMarketDataUseCase:
+    return QueryMarketDataUseCase(asset_repo(db), portfolio_repo(db), market_data_repo(db))
+
+
+def build_query_analytics_use_case(db: Session) -> QueryAnalyticsUseCase:
+    return QueryAnalyticsUseCase(
+        build_query_portfolio_use_case(db), asset_repo(db), portfolio_repo(db), market_data_repo(db)
+    )
+
+
 def build_search_assets_use_case(db: Session) -> SearchAssetsUseCase:
     return SearchAssetsUseCase(asset_repo(db), YFinanceMarketData())
 
@@ -134,3 +158,17 @@ def build_security_resolver_agent() -> SecurityResolverAgent:
     from ai.agents.security_resolver.agent import SecurityResolverAgent
 
     return SecurityResolverAgent()
+
+
+def build_import_reviewer_agent() -> ImportReviewerAgent:
+    """Stateless, same reasoning as build_security_resolver_agent above."""
+    from ai.agents.import_reviewer.agent import ImportReviewerAgent
+
+    return ImportReviewerAgent()
+
+
+def build_portfolio_assistant_agent() -> PortfolioAssistantAgent:
+    """Stateless, same reasoning as build_security_resolver_agent above."""
+    from ai.agents.portfolio_assistant.agent import PortfolioAssistantAgent
+
+    return PortfolioAssistantAgent()

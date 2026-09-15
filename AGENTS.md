@@ -151,6 +151,41 @@ Paper trading port is 7497, live is 7496.
       one full live run (real ambiguous ISIN, 8 real candidates) correctly
       resolved in a single tool call. `AGENT_MODEL` defaults to `qwen3:8b`;
       `AGENT_ENABLED` stays `false` by default regardless.
-- [ ] Security resolver, Phases 7-8: ML ranker, additional MCP servers/agents
-- [ ] AI/agent layer beyond the (non-LLM) security resolver above
-      (deliberately out of scope for this pass)
+- [x] Portfolio intelligence, Phase 8a-d and 8f of
+      `plans/agentic_asset_mapping_phase7_8.md` (8e descoped, see below):
+      `portfolio`/`market_data`/`analytics`/`notes` MCP servers
+      (`ai/mcp_servers/`, 17 tools total) backed by new use cases
+      (`QueryMarketDataUseCase`, `QueryAnalyticsUseCase`) and pure
+      functions in `app/domain/analytics.py`; also exposed at
+      `GET /api/analytics/*` / `GET /api/notes`. Two agents now use these:
+      **`import_reviewer`** (`ai/agents/import_reviewer/`) reviews a fresh
+      statement import and writes a note when something looks wrong —
+      gated `AGENT_ENABLED`, triggered from `commit_import`. **`portfolio_assistant`**
+      (`ai/agents/portfolio_assistant/`) is a conversational chat agent
+      with real session memory (replays prior turns via
+      `agent_loop.run_agent`'s new `history` param) and persisted session
+      history (`chat_sessions`/`chat_messages`, migration `0004`,
+      `ports/chat.py::ChatRepo`), behind a full two-pane chat page
+      (`frontend/src/features/assistant/AssistantPage.tsx`,
+      `/assistant`/`/assistant/:sessionId`) — not a stub. Verified live
+      end to end: `check_import_prices` flagged two real mispriced IBKR
+      trades and `import_reviewer` correctly wrote a note about them; a
+      real multi-turn chat conversation (auto-titled session, a
+      context-dependent follow-up answered correctly from replayed
+      history, switching between two sessions) worked in-browser against
+      real Ollama (`qwen3:8b`). Two real bugs found and fixed along the
+      way — see `backend/ai/AGENTS.md`'s "MCP SDK gotcha" section (a
+      bare-`dict`-return tool silently returning `None` from
+      `McpToolSession.call_tool`, wrongly diagnosed as a model-quality
+      issue before the real cause was found) and rule 11 (an async entry
+      point needed because `commit_import` is itself `async def`).
+- [ ] Security resolver Phase 7 (ML ranker) — see
+      `plans/agentic_asset_mapping_phase7_8.md`; not started (data-volume
+      gate not met)
+- [ ] `weekly_report` agent (Phase 8e) — designed but descoped by user
+      decision (2026-09-15): `notes`/`import_reviewer` already cover the
+      "something worth flagging" case for this single-user portfolio
+- [ ] AI/agent layer beyond the security resolver and the four portfolio
+      intelligence agents above (e.g. quantitative signals, news/sentiment
+      — see the plan's own "Beyond Phase 8" section for ideas, none
+      committed)

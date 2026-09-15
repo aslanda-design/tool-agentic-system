@@ -20,6 +20,8 @@ app/
     listings.py         Security-resolver types: ResolutionContext, Candidate, ... (see below)
     exchanges.py         Bloomberg/Yahoo/broker exchange-code <-> MIC lookup tables
     listing_scoring.py   Pure rule-based scoring/decision for the resolver — SCORER_VERSION
+    analytics.py          Pure portfolio-analytics math (concentration, drawdown,
+                           mispriced-trade detection) — see "Portfolio intelligence" below
 
   ports/              Interfaces the domain/application layer depends on
     broker.py            BrokerPort — live account state from a broker's API
@@ -27,11 +29,15 @@ app/
     market_data.py         MarketDataPort + FxRatePort — quotes/bars/FX
     security_master.py     SecurityMasterPort — ISIN -> exchange listings (OpenFIGI)
     repositories.py         AssetRepo, PortfolioRepo, MarketDataRepo, ResolutionRepo — persistence
+    notes.py                 NoteRepo — agent-written notes (see "Portfolio intelligence" below)
+    chat.py                   ChatRepo — portfolio_assistant's sessions/messages (see below)
 
   application/        Use cases: plain classes, ports injected via constructor
     sync_broker.py, import_transactions.py, manual_entry.py,
     refresh_market_data.py, build_snapshots.py,
     query_portfolio.py, query_asset.py, search_assets.py,
+    query_market_data.py, query_analytics.py   read-only, agent/Dashboard-facing
+                                                 (see "Portfolio intelligence" below)
     asset_resolution.py   shared identity-resolution logic (see below)
     resolve_security.py   the security resolver (see "Security resolver" below)
     import_fingerprint.py   deterministic dedup id for statement imports with no
@@ -53,7 +59,7 @@ app/
       myinvestor.py             MyInvestor's statement exports (see below)
     security_master/openfigi_adapter.py   OpenFIGI /v3/mapping — ISIN -> exchange listings
     persistence/orm.py        SQLAlchemy mapped tables (the ONLY module that knows the physical schema)
-    persistence/repositories.py  SqlAssetRepo / SqlPortfolioRepo / SqlMarketDataRepo / SqlResolutionRepo
+    persistence/repositories.py  SqlAssetRepo / SqlPortfolioRepo / SqlMarketDataRepo / SqlResolutionRepo / SqlNoteRepo / SqlChatRepo
     market_data/yfinance_adapter.py, fx_adapter.py
     scheduler.py               APScheduler jobs calling use cases (incl. run_resolver_job)
 
@@ -62,6 +68,8 @@ app/
                          `container.py`, call it, `db.commit()`, return the DTO
     routes/resolutions.py  everything about an existing security resolution
                             (POST /api/assets/{id}/resolve itself lives in assets.py)
+    routes/notes.py, chat.py   agent-written notes; portfolio_assistant's
+                                chat sessions (see "Portfolio intelligence" below)
     schemas.py            Pydantic REQUEST models only (see below)
 
 ai/                  LLM/agent layer, sibling to app/, never mixed into it —
@@ -73,13 +81,25 @@ ai/                  LLM/agent layer, sibling to app/, never mixed into it —
   agents/security_resolver/  the local-LLM agent (Phase 6) that uses those
                              tools to finish a NEEDS_AGENT resolution;
                              evaluation/ is its offline eval harness.
+  agents/import_reviewer/    reviews a fresh statement import, writes a
+                             note via the `notes` server (Phase 8d)
+  agents/portfolio_assistant/  conversational chat agent with session
+                               memory/history (Phase 8f — see "Portfolio
+                               intelligence" below)
+  mcp_servers/portfolio/, market_data/, analytics/, notes/  read (+ notes:
+                             write) MCP servers wrapping the query/analytics
+                             use cases and NoteRepo (Phase 8a-c)
   common/                shared building blocks every agent uses:
     jsonable.py             dataclass/Decimal/date/set -> JSON-safe dict
     llm.py                  pluggable model backend: OllamaChatClient,
                              OpenAiCompatibleChatClient (Groq/OpenAI/...),
                              build_chat_client() picks one from settings
-    mcp_client.py            stdio MCP client, adapted for the agent loop
-    agent_loop.py            the one tool-calling loop every agent uses
+    mcp_client.py            stdio MCP client: open_mcp_server (one server)
+                             and open_mcp_servers (several at once, Phase 8)
+    agent_loop.py            the one tool-calling loop every agent uses —
+                             terminal-tool mode or conversational
+                             (terminal_tools=None) + optional session
+                             memory (`history`), Phase 8f
 ```
 
 **Dependency direction is one-way**: `domain` imports nothing from this app.
@@ -253,6 +273,98 @@ Runs only via `POST /api/resolutions/{id}/agent`, gated on
 `AGENT_ENABLED=true` (default `false`); never scheduled, never
 `BackgroundTasks`. It always leaves the resolution in a settled state
 (`RESOLVED_BY_AGENT` or `NEEDS_REVIEW`), never stuck.
+
+## Portfolio intelligence (MCP servers + analytics + notes + chat)
+
+Phase 8a-d and 8f of `plans/agentic_asset_mapping_phase7_8.md`,
+implemented (8e, a `weekly_report` agent, was descoped by the user —
+`notes`/`import_reviewer` already cover the "something worth flagging"
+case for a single-user portfolio): four MCP servers under
+`ai/mcp_servers/` — `portfolio` (6 tools: summary, positions, allocation,
+value history, transactions, accounts), `market_data` (4 tools: asset
+lookup, price history, FX rate, data freshness), `analytics` (5 tools:
+returns, concentration, currency exposure, drawdown, mispriced-trade
+detection), and `notes` (2 tools — see below) — plus two agents that use
+them: `import_reviewer` (reviews a fresh import, writes a note) and
+`portfolio_assistant` (a conversational chat agent — see its own
+paragraph below).
+
+`portfolio` and most of `market_data` are thin wrappers over the existing
+`QueryPortfolioUseCase`/`QueryAssetUseCase` — no new business logic.
+`market_data` reads `MarketDataRepo` (Postgres) exclusively, **never**
+`MarketDataPort` (live yfinance) — an agent's tool call must stay as cheap
+and rate-limit-safe as any other read; `application/query_market_data.py`
+is the new use case this required (`GetAssetChartUseCase`, used by the
+chart page, is the one place that's allowed to call live yfinance from a
+request, and that reasoning doesn't extend here).
+
+`analytics` has real new math, all pure functions in `domain/analytics.py`:
+`weighted_return` (value-weighted average across positions),
+`herfindahl_index` (concentration), `max_drawdown` (peak-to-trough over a
+value history), `flag_mispriced_trades` (BUY/SELL price vs. that day's
+persisted close, >10% default threshold — the most practically useful tool
+here: verified live against the real dev DB, where it correctly caught two
+real IBKR trades priced well off market). `QueryAnalyticsUseCase`
+composes these with `QueryPortfolioUseCase`; also exposed at
+`GET /api/analytics/*` (`api/routes/analytics.py`) so a human on the
+Dashboard sees the exact same numbers an agent would.
+
+`notes` (`ai_notes` table, migration `0003`; `ports/notes.py::NoteRepo`,
+`SqlNoteRepo`) is the write path `import_reviewer` uses to record findings
+— `save_note` (write) and `list_notes` (read). It's the second legitimate
+MCP write path besides `security`'s (see `backend/ai/AGENTS.md` rule 6): a
+note is append-only with no state machine, so `NoteRepo.add()` itself is
+the whole guard, no use case needed. Also exposed at `GET /api/notes` /
+`POST /api/notes/{id}/dismiss` for the Accounts-page/Dashboard UI.
+
+**`import_reviewer`** (`ai/agents/import_reviewer/`): runs after a
+statement import commits (`api/routes/imports.py::commit_import`, gated
+`AGENT_ENABLED`), opens `analytics`/`market_data`/`security` purely to
+pre-fetch context (`check_import_prices`, `get_data_freshness`,
+`list_pending_resolutions` — none of these are exposed to the model as
+callable tools; see `open_mcp_servers`' `tool_names=set()` pattern in
+`ai/common/mcp_client.py`), and writes exactly one note via `notes`'
+`save_note` — the model's only real tool. Single-turn in practice, same
+"don't make a small model fetch its own context" reasoning as
+`security_resolver`. Uses `arun()` (async), not `run()` (sync) —
+`commit_import` is itself `async def`, so it awaits the agent directly
+rather than going through a sync wrapper that would try to nest
+`asyncio.run()` inside an already-running event loop (see
+`backend/ai/AGENTS.md` rule 11 — a real bug this fixes, not a
+hypothetical one).
+
+**`portfolio_assistant`** (`ai/agents/portfolio_assistant/`): a
+conversational chat agent — `ai/common/agent_loop.py::run_agent`'s
+`terminal_tools=None` mode (ends on the model's first plain-text reply,
+no forced "finish" tool) plus a `history` param that replays prior turns
+from `chat_sessions`/`chat_messages` (migration `0004`;
+`ports/chat.py::ChatRepo`, `SqlChatRepo`) as session memory — only each
+past turn's final text, never the tool calls/results that produced it, so
+the model never answers from a stale price it happened to memorize; it
+re-calls a tool instead. Reachable at `POST
+/api/chat/sessions/{id}/messages` (`api/routes/chat.py`; session CRUD —
+`GET/POST /api/chat/sessions`, `GET/DELETE /api/chat/sessions/{id}` — are
+thin routes straight over `ChatRepo`, same "plain repo write is its own
+guard" reasoning as `notes`). Tool allowlist: `get_portfolio_summary`,
+`list_positions`, `get_allocation`, `get_value_history` (`portfolio`);
+`get_asset` (`market_data`); `get_returns`, `get_concentration`,
+`get_currency_exposure`, `get_drawdown` (`analytics`) — spread across
+three servers via `open_mcp_servers`, which is why this agent (like
+`import_reviewer`) needs the multi-server form, not the single-server
+`open_mcp_server` `security_resolver` uses. Fully read-only against
+portfolio data, but does persist the conversation itself (`ChatRepo`,
+called directly by the agent — not through an MCP tool, since session
+memory is plumbing the agent owns, invisible to the model) and an
+`agent_runs` audit row per turn. Frontend:
+`frontend/src/features/assistant/AssistantPage.tsx` — a two-pane chat
+page (session history sidebar + conversation), not a stub.
+
+A real bug in `ai/common/mcp_client.py` was found and fixed verifying
+these live — a tool annotated to return a bare `dict` could come back as
+`None` from `McpToolSession.call_tool` even with real data returned (an
+SDK quirk, not a model problem — see `backend/ai/AGENTS.md`'s "MCP SDK
+gotcha" section for the full account, since it affects any future tool
+with that annotation shape too, not just these two agents).
 
 ## Known limitations (don't rediscover these)
 

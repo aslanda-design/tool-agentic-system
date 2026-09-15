@@ -265,3 +265,54 @@ class AgentRunORM(Base):
     duration_ms: Mapped[int] = mapped_column(Integer)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class AiNoteORM(Base):
+    """A short Markdown note an agent wrote — see
+    plans/agentic_asset_mapping_phase7_8.md Phase 8c. Append-only: the only
+    mutation an existing row ever gets is `dismissed_at` being set."""
+
+    __tablename__ = "ai_notes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    agent: Mapped[str] = mapped_column(String(40))  # 'import_reviewer' | 'weekly_report'
+    scope: Mapped[str] = mapped_column(String(20))  # 'account' | 'portfolio'
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), nullable=True)
+    title: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (Index("ix_ai_notes_created_at", "created_at"),)
+
+
+class ChatSessionORM(Base):
+    """One conversation thread with portfolio_assistant — see
+    plans/agentic_asset_mapping_phase7_8.md Phase 8f. `updated_at` (not
+    `created_at`) is what the history sidebar sorts by."""
+
+    __tablename__ = "chat_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    messages: Mapped[list["ChatMessageORM"]] = relationship(back_populates="session", passive_deletes=True)
+
+    __table_args__ = (Index("ix_chat_sessions_updated_at", "updated_at"),)
+
+
+class ChatMessageORM(Base):
+    __tablename__ = "chat_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("chat_sessions.id", ondelete="CASCADE"))
+    role: Mapped[str] = mapped_column(String(20))  # 'user' | 'assistant'
+    content: Mapped[str] = mapped_column(Text)
+    tool_calls: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    session: Mapped[ChatSessionORM] = relationship(back_populates="messages")
+
+    __table_args__ = (Index("ix_chat_messages_session_id", "session_id"),)

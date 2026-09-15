@@ -145,3 +145,42 @@ class PortfolioSnapshotPoint:
     cost_basis: Decimal
     net_invested: Decimal
     cash: Decimal
+
+
+@dataclass(slots=True)
+class Note:
+    """A short Markdown note an agent wrote — see NoteRepo
+    (ports/repositories.py) and plans/agentic_asset_mapping_phase7_8.md
+    Phase 8c. Append-only: `dismissed_at` is the only field ever mutated
+    after creation."""
+
+    id: int
+    agent: str  # 'import_reviewer' | 'weekly_report'
+    scope: str  # 'account' | 'portfolio'
+    account_id: int | None
+    title: str
+    body: str
+    created_at: datetime
+    dismissed_at: datetime | None
+
+
+@dataclass(slots=True)
+class ChatSession:
+    """One conversation thread with portfolio_assistant — see ChatRepo
+    (ports/chat.py) and plans/agentic_asset_mapping_phase7_8.md Phase 8f.
+    `updated_at` is what the frontend's history sidebar sorts by."""
+
+    id: int
+    title: str
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(slots=True)
+class ChatMessage:
+    id: int
+    session_id: int
+    role: str  # 'user' | 'assistant'
+    content: str
+    tool_calls: list[dict] | None
+    created_at: datetime

@@ -212,3 +212,45 @@ export function useFlagResolutionForReview() {
     [['resolutions']],
   )
 }
+
+// --- portfolio_assistant chat (see plans/agentic_asset_mapping_phase7_8.md Phase 8f) ---
+
+export function useChatSessions() {
+  return useQuery({ queryKey: ['chat', 'sessions'], queryFn: endpoints.listChatSessions })
+}
+
+export function useChatSession(sessionId: number | undefined) {
+  return useQuery({
+    queryKey: ['chat', 'sessions', sessionId],
+    queryFn: () => endpoints.chatSession(sessionId as number),
+    enabled: sessionId !== undefined,
+  })
+}
+
+export function useCreateChatSession() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (title?: string) => endpoints.createChatSession(title),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['chat', 'sessions'] }),
+  })
+}
+
+export function useDeleteChatSession() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (sessionId: number) => endpoints.deleteChatSession(sessionId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['chat', 'sessions'] }),
+  })
+}
+
+export function useSendChatMessage() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ sessionId, message }: { sessionId: number; message: string }) =>
+      endpoints.sendChatMessage(sessionId, message),
+    onSuccess: (_data, { sessionId }) => {
+      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions', sessionId] })
+      queryClient.invalidateQueries({ queryKey: ['chat', 'sessions'] }) // title/updated_at may have changed
+    },
+  })
+}

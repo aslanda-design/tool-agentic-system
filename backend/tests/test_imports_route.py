@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.adapters.persistence.session import SessionLocal
+from app.api.routes import imports as imports_route
 from app.main import app
 
 REAL_HEADER = "Fecha de la orden;ISIN;Importe estimado;Nº de participaciones;Estado\n"
@@ -90,3 +91,53 @@ def test_commit_with_unmapped_required_columns_returns_422_with_string_detail():
         )
         assert response.status_code == 422
         assert isinstance(response.json()["detail"], str)
+
+
+def test_commit_never_triggers_import_reviewer_when_agent_disabled(monkeypatch):
+    """AGENT_ENABLED defaults to false, so a plain `pytest` run (this one
+    included) must never trigger a real Ollama call here — see
+    plans/agentic_asset_mapping_phase7_8.md §3.7's gating rationale, same
+    pattern as the security-resolver agent's own POST /api/resolutions/{id}/agent."""
+    calls: list[int] = []
+
+    class _TrackingAgent:
+        async def arun(self, account_id):
+            calls.append(account_id)
+
+    monkeypatch.setattr(imports_route.settings, "agent_enabled", False)
+    monkeypatch.setattr(imports_route.container, "build_import_reviewer_agent", lambda: _TrackingAgent())
+
+    with TestClient(app) as client:
+        account = client.post(
+            "/api/accounts",
+            json={"broker_key": "test-myinvestor-import", "name": "Test MyInvestor Import", "currency": "EUR"},
+        ).json()
+        client.post(
+            f"/api/imports/commit?account_id={account['id']}&format=myinvestor",
+            files={"file": ("export.csv", EXPORT, "text/csv")},
+        )
+
+    assert calls == []
+
+
+def test_commit_triggers_import_reviewer_when_agent_enabled(monkeypatch):
+    calls: list[int] = []
+
+    class _TrackingAgent:
+        async def arun(self, account_id):
+            calls.append(account_id)
+
+    monkeypatch.setattr(imports_route.settings, "agent_enabled", True)
+    monkeypatch.setattr(imports_route.container, "build_import_reviewer_agent", lambda: _TrackingAgent())
+
+    with TestClient(app) as client:
+        account = client.post(
+            "/api/accounts",
+            json={"broker_key": "test-myinvestor-import", "name": "Test MyInvestor Import", "currency": "EUR"},
+        ).json()
+        client.post(
+            f"/api/imports/commit?account_id={account['id']}&format=myinvestor",
+            files={"file": ("export.csv", EXPORT, "text/csv")},
+        )
+
+    assert calls == [account["id"]]

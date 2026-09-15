@@ -9,11 +9,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.adapters.scheduler import build_scheduler, gap_fill_snapshots_on_startup
 from app.api.routes import (
     accounts,
+    analytics,
     assets,
+    chat,
     health,
     imports,
     manual,
     market_data,
+    notes,
     portfolio,
     positions,
     resolutions,
@@ -86,3 +89,6 @@ app.include_router(manual.router, prefix="/api")
 app.include_router(imports.router, prefix="/api")
 app.include_router(market_data.router, prefix="/api")
 app.include_router(resolutions.router, prefix="/api")
+app.include_router(analytics.router, prefix="/api")
+app.include_router(notes.router, prefix="/api")
+app.include_router(chat.router, prefix="/api")

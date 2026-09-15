@@ -3,6 +3,8 @@ import type {
   Account,
   AssetDetail,
   Bar,
+  ChatSession,
+  ChatSessionDetail,
   Granularity,
   HistoryPoint,
   ImportPreview,
@@ -15,6 +17,7 @@ import type {
   ResolutionCandidate,
   ResolutionStatus,
   SearchResult,
+  SendChatMessageResult,
   SyncResult,
   SyncStatus,
   Transaction,
@@ -119,4 +122,13 @@ export const endpoints = {
     api.post<ResolutionCandidate>(`/resolutions/${resolutionId}/candidates`, { symbol }),
   flagResolutionForReview: (resolutionId: number, note = '') =>
     api.post<Resolution>(`/resolutions/${resolutionId}/flag-for-review`, { note }),
+
+  // --- portfolio_assistant chat (see plans/agentic_asset_mapping_phase7_8.md Phase 8f) ---
+
+  listChatSessions: () => api.get<ChatSession[]>('/chat/sessions'),
+  createChatSession: (title = '') => api.post<ChatSession>('/chat/sessions', { title }),
+  chatSession: (sessionId: number) => api.get<ChatSessionDetail>(`/chat/sessions/${sessionId}`),
+  deleteChatSession: (sessionId: number) => api.delete(`/chat/sessions/${sessionId}`),
+  sendChatMessage: (sessionId: number, message: string) =>
+    api.post<SendChatMessageResult>(`/chat/sessions/${sessionId}/messages`, { message }),
 }
