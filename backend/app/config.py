@@ -4,9 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    database_url: str = (
-        "postgresql+psycopg://investment_tracker:investment_tracker@localhost:5432/investment_tracker"
-    )
+    database_url: str = "postgresql+psycopg://investment_tracker:investment_tracker@localhost:5432/investment_tracker"
 
     base_currency: str = "EUR"
 
@@ -65,6 +63,14 @@ class Settings(BaseSettings):
     agent_max_steps: int = 8
     agent_timeout_seconds: int = 180
     agent_num_ctx: int = 8192  # Ollama only — ignored by the "openai" provider
+
+    # --- Quant Lab (see plans/quant_lab.md) ---
+    # Twelve Data (https://twelvedata.com) — a second, keyed source of daily
+    # bars used only to backfill calibration history when yfinance's
+    # persisted history is too short/gappy. Free tier as of writing: 800
+    # requests/day, 8/min — verify current numbers before relying on them.
+    # Only a symbol/MIC/date range is ever sent, never account/holding data.
+    twelve_data_api_key: str = ""
 
 
 settings = Settings()

@@ -29,6 +29,7 @@ from app.domain.models import (
     Note,
     Transaction,
 )
+from app.domain.quant.types import QuantRunRecord
 
 
 class FakeAssetRepo:
@@ -566,3 +567,34 @@ class FakeChatRepo:
     def list_messages(self, session_id: int, limit: int | None = None) -> list[ChatMessage]:
         messages = self._messages.get(session_id, [])
         return messages[-limit:] if limit is not None else list(messages)
+
+
+class FakeQuantRunRepo:
+    """In-memory QuantRunRepo — see module docstring. Backs
+    application/run_quant_simulation.py's tests (plans/quant_lab.md)."""
+
+    def __init__(self) -> None:
+        self._runs: dict[int, QuantRunRecord] = {}
+        self._next_id = 1
+
+    def create(self, record: QuantRunRecord) -> int:
+        run_id = self._next_id
+        self._next_id += 1
+        stored = QuantRunRecord(
+            id=run_id, asset_id=record.asset_id, model_key=record.model_key, split_date=record.split_date,
+            horizon_days=record.horizon_days, n_paths=record.n_paths, seed=record.seed, params=record.params,
+            calibration_params=record.calibration_params, calibration_diagnostics=record.calibration_diagnostics,
+            percentiles=record.percentiles, backtest=record.backtest, created_by=record.created_by,
+            note=record.note, created_at=record.created_at,
+        )
+        self._runs[run_id] = stored
+        return run_id
+
+    def get(self, run_id: int) -> QuantRunRecord | None:
+        return self._runs.get(run_id)
+
+    def list_for_asset(self, asset_id: int, limit: int = 20) -> list[QuantRunRecord]:
+        rows = sorted(
+            (r for r in self._runs.values() if r.asset_id == asset_id), key=lambda r: r.created_at, reverse=True
+        )
+        return rows[:limit]

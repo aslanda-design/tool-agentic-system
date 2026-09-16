@@ -10,7 +10,7 @@ COPY ai ./ai
 COPY migrations ./migrations
 COPY alembic.ini ./
 
-RUN pip install --no-cache-dir ".[ai]"
+RUN pip install --no-cache-dir ".[ai,quant]"
 
 EXPOSE 8000
 

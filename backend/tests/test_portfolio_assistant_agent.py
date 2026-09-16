@@ -197,11 +197,17 @@ def test_writes_a_fallback_reply_on_unexpected_error(monkeypatch):
 # --- pure helpers ---------------------------------------------------------
 
 
-def test_select_tools_returns_the_fixed_allowlist_across_three_servers():
+def test_select_tools_returns_the_fixed_allowlist_across_four_servers():
     servers = agent_module._select_tools("anything")
 
-    assert set(servers) == {"ai.mcp_servers.portfolio", "ai.mcp_servers.market_data", "ai.mcp_servers.analytics"}
+    assert set(servers) == {
+        "ai.mcp_servers.portfolio",
+        "ai.mcp_servers.market_data",
+        "ai.mcp_servers.analytics",
+        "ai.mcp_servers.quant",
+    }
     assert "get_portfolio_summary" in servers["ai.mcp_servers.portfolio"]
+    assert servers["ai.mcp_servers.quant"] == {"list_models", "recommend_model", "explain_run"}
 
 
 def test_auto_title_truncates_a_long_first_line():

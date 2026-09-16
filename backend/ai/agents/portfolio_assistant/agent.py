@@ -41,6 +41,10 @@ SERVERS: dict[str, set[str] | None] = {
     "ai.mcp_servers.portfolio": {"get_portfolio_summary", "list_positions", "get_allocation", "get_value_history"},
     "ai.mcp_servers.market_data": {"get_asset"},
     "ai.mcp_servers.analytics": {"get_returns", "get_concentration", "get_currency_exposure", "get_drawdown"},
+    # Read-only/advisory only (plans/quant_lab.md section 0.2) — this agent
+    # can list models, recommend one, and explain a run the user already
+    # made on the Quant Lab page, but never trigger a simulation itself.
+    "ai.mcp_servers.quant": {"list_models", "recommend_model", "explain_run"},
 }
 
 # How many past chat_messages rows to replay as session memory — roughly

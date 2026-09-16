@@ -254,3 +254,43 @@ export function useSendChatMessage() {
     },
   })
 }
+
+// --- Quant Lab (see plans/quant_lab.md) -----------------------------------
+
+export function useQuantModels() {
+  return useQuery({ queryKey: ['quant', 'models'], queryFn: endpoints.quantModels })
+}
+
+export function useQuantRecommendation(assetId?: number) {
+  return useQuery({
+    queryKey: ['quant', 'recommendation', assetId],
+    queryFn: () => endpoints.quantRecommendation(assetId as number),
+    enabled: assetId !== undefined,
+  })
+}
+
+export function useQuantRuns(assetId?: number) {
+  return useQuery({
+    queryKey: ['quant', 'runs', assetId],
+    queryFn: () => endpoints.quantRuns(assetId as number),
+    enabled: assetId !== undefined,
+  })
+}
+
+export function useQuantRun(runId?: number) {
+  return useQuery({
+    queryKey: ['quant', 'run', runId],
+    queryFn: () => endpoints.quantRun(runId as number),
+    enabled: runId !== undefined,
+  })
+}
+
+export function useRunQuantSimulation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: endpoints.runQuantSimulation,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['quant', 'runs', data.asset_id] })
+    },
+  })
+}

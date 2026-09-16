@@ -9,6 +9,7 @@ application/refresh_market_data.py for the only place this is called from.
 from __future__ import annotations
 
 import logging
+import math
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -57,6 +58,14 @@ def _normalize_currency(raw: str | None) -> tuple[str | None, Decimal]:
 def _dec(value, divisor: Decimal = Decimal(1)) -> Decimal | None:
     if value is None:
         return None
+    # yfinance/pandas represent a missing bar (e.g. the still-open trading
+    # day's row, requested before that exchange's data is finalized) as NaN
+    # rather than None. Decimal(str(nan)) happily produces Decimal('NaN')
+    # instead of raising, which then blows up JSON encoding several layers
+    # up (json.dumps rejects NaN) — treat it as missing here so callers skip
+    # the bar the same way they already do for a genuinely absent value.
+    if isinstance(value, float) and math.isnan(value):
+        return None
     result = Decimal(str(value))
     return result / divisor if divisor != 1 else result
 
@@ -97,14 +106,25 @@ class YFinanceMarketData(MarketDataPort):
         bars = []
         for idx, row in df.iterrows():
             try:
+                open_, high, low, close = (
+                    _dec(row["Open"], divisor),
+                    _dec(row["High"], divisor),
+                    _dec(row["Low"], divisor),
+                    _dec(row["Close"], divisor),
+                )
+                if None in (open_, high, low, close):
+                    # Typically today's still-open bar — the exchange hasn't
+                    # finalized it yet, so yfinance reports it as NaN rather
+                    # than simply not including the row.
+                    continue
                 bars.append(
                     BarData(
                         date=idx.date(),
-                        open=_dec(row["Open"], divisor),
-                        high=_dec(row["High"], divisor),
-                        low=_dec(row["Low"], divisor),
-                        close=_dec(row["Close"], divisor),
-                        adj_close=_dec(row.get("Adj Close", row["Close"]), divisor),
+                        open=open_,
+                        high=high,
+                        low=low,
+                        close=close,
+                        adj_close=_dec(row.get("Adj Close", row["Close"]), divisor) or close,
                         volume=_dec(row.get("Volume", 0)) or Decimal(0),
                     )
                 )
@@ -129,13 +149,21 @@ class YFinanceMarketData(MarketDataPort):
         bars = []
         for idx, row in df.iterrows():
             try:
+                open_, high, low, close = (
+                    _dec(row["Open"], divisor),
+                    _dec(row["High"], divisor),
+                    _dec(row["Low"], divisor),
+                    _dec(row["Close"], divisor),
+                )
+                if None in (open_, high, low, close):
+                    continue
                 bars.append(
                     IntradayBarData(
                         timestamp=idx.to_pydatetime(),
-                        open=_dec(row["Open"], divisor),
-                        high=_dec(row["High"], divisor),
-                        low=_dec(row["Low"], divisor),
-                        close=_dec(row["Close"], divisor),
+                        open=open_,
+                        high=high,
+                        low=low,
+                        close=close,
                         volume=_dec(row.get("Volume", 0)) or Decimal(0),
                     )
                 )

@@ -10,9 +10,13 @@ import type {
   ImportPreview,
   IntradayBar,
   MapSuggestion,
+  ModelRecommendation,
   OpeningBalanceSuggestion,
   Position,
   PortfolioSummary,
+  QuantModel,
+  QuantRun,
+  QuantRunSummary,
   Resolution,
   ResolutionCandidate,
   ResolutionStatus,
@@ -131,4 +135,22 @@ export const endpoints = {
   deleteChatSession: (sessionId: number) => api.delete(`/chat/sessions/${sessionId}`),
   sendChatMessage: (sessionId: number, message: string) =>
     api.post<SendChatMessageResult>(`/chat/sessions/${sessionId}/messages`, { message }),
+
+  // --- Quant Lab (see plans/quant_lab.md) ---------------------------------
+
+  quantModels: () => api.get<QuantModel[]>('/quant/models'),
+  quantRecommendation: (assetId: number) =>
+    api.get<ModelRecommendation[]>(`/quant/assets/${assetId}/recommendation`),
+  runQuantSimulation: (data: {
+    asset_id: number
+    model_key: string
+    split_date: string
+    horizon_days: number
+    n_paths: number
+    seed?: number | null
+    params: Record<string, number>
+  }) => api.post<QuantRun>('/quant/simulate', data),
+  quantRuns: (assetId: number, limit = 20) =>
+    api.get<QuantRunSummary[]>(`/quant/runs?asset_id=${assetId}&limit=${limit}`),
+  quantRun: (runId: number) => api.get<QuantRun>(`/quant/runs/${runId}`),
 }

@@ -40,3 +40,7 @@ Thumbs.db
 
 # plans
 plans/
+docs/
+
+# tests
+tests/

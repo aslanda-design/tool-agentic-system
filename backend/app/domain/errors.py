@@ -53,3 +53,18 @@ class UnsupportedStatementFileError(StatementParseError):
     legacy .xls BIFF file, or an HTML table saved with an .xls extension —
     both common from Spanish bank exports). The message always names the
     detected format and the fix, never a stack trace."""
+
+
+class QuantModelNotFoundError(DomainError):
+    """Raised when a quant model_key isn't in domain.quant.registry.MODEL_REGISTRY
+    (see plans/quant_lab.md)."""
+
+
+class QuantRunNotFoundError(DomainError):
+    """Raised when a quant_runs id doesn't exist."""
+
+
+class InsufficientQuantHistoryError(DomainError):
+    """Raised when there isn't enough persisted history before a run's
+    split date to calibrate the chosen model, even after an attempted
+    backfill (see application/backfill_quant_history.py)."""

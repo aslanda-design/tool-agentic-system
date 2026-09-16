@@ -30,6 +30,10 @@ ai = [
     "mcp>=2.0",
     "ollama>=0.5",
 ]
+quant = [
+    "numpy>=2.0",
+    "statsmodels>=0.14",
+]
 
 [build-system]
 requires = ["setuptools>=68"]

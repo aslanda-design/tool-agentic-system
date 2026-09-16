@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Date,
     DateTime,
@@ -316,3 +317,32 @@ class ChatMessageORM(Base):
     session: Mapped[ChatSessionORM] = relationship(back_populates="messages")
 
     __table_args__ = (Index("ix_chat_messages_session_id", "session_id"),)
+
+
+class QuantRunORM(Base):
+    """One Monte Carlo run from the Quant Lab (see plans/quant_lab.md).
+    Deliberately stores only the RUN'S RECIPE (asset/model/split/params/
+    seed) plus a percentile summary — never the raw n_paths x horizon_days
+    path array. RunQuantSimulationUseCase.replay() recomputes paths
+    on demand from this row, exactly, because calibration only reads bars
+    already persisted for a fixed date range and the RNG is seeded."""
+
+    __tablename__ = "quant_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"))
+    model_key: Mapped[str] = mapped_column(String(40))
+    split_date: Mapped[date] = mapped_column(Date)
+    horizon_days: Mapped[int] = mapped_column(Integer)
+    n_paths: Mapped[int] = mapped_column(Integer)
+    seed: Mapped[int] = mapped_column(BigInteger)
+    params: Mapped[dict] = mapped_column(JSONB)
+    calibration_params: Mapped[dict] = mapped_column(JSONB)
+    calibration_diagnostics: Mapped[dict] = mapped_column(JSONB)
+    percentiles: Mapped[dict] = mapped_column(JSONB)
+    backtest: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(10))  # 'user' | 'agent'
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    __table_args__ = (Index("ix_quant_runs_asset_created", "asset_id", "created_at"),)

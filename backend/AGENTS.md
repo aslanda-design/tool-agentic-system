@@ -22,13 +22,26 @@ app/
     listing_scoring.py   Pure rule-based scoring/decision for the resolver — SCORER_VERSION
     analytics.py          Pure portfolio-analytics math (concentration, drawdown,
                            mispriced-trade detection) — see "Portfolio intelligence" below
+    quant/                Quant Lab: pluggable quantitative models — see "Quant Lab" below
+      types.py               ParamSpec, ModelMetadata, CalibrationResult, SimulationResult,
+                              BacktestResult, QuantRunRecord, the QuantModel protocol
+      registry.py            MODEL_REGISTRY + register()/get()/list_models()
+      dates.py                next_trading_days() — shared by every model's simulate()
+      annualization.py        log_returns()/annualized_mean_and_std()/annualized_variance() —
+                               shared by the two SDE-based models (black_scholes_gbm, heston)
+      bootstrap.py            simulate_by_residual_bootstrap() — the shared Monte Carlo
+                               engine linear_regression/time_series_ar reuse
+      recommendation.py       recommend_model() — deterministic, non-LLM heuristics
+      models/                 linear_regression.py, time_series_ar.py, black_scholes_gbm.py,
+                               heston.py — one file per model
 
   ports/              Interfaces the domain/application layer depends on
     broker.py            BrokerPort — live account state from a broker's API
     statements.py         StatementPort — FULL historical transactions
-    market_data.py         MarketDataPort + FxRatePort — quotes/bars/FX
+    market_data.py         MarketDataPort + FxRatePort + HistoricalBarSourcePort — quotes/bars/FX
     security_master.py     SecurityMasterPort — ISIN -> exchange listings (OpenFIGI)
-    repositories.py         AssetRepo, PortfolioRepo, MarketDataRepo, ResolutionRepo — persistence
+    repositories.py         AssetRepo, PortfolioRepo, MarketDataRepo, ResolutionRepo,
+                             QuantRunRepo — persistence
     notes.py                 NoteRepo — agent-written notes (see "Portfolio intelligence" below)
     chat.py                   ChatRepo — portfolio_assistant's sessions/messages (see below)
 
@@ -38,6 +51,7 @@ app/
     query_portfolio.py, query_asset.py, search_assets.py,
     query_market_data.py, query_analytics.py   read-only, agent/Dashboard-facing
                                                  (see "Portfolio intelligence" below)
+    backfill_quant_history.py, run_quant_simulation.py   the Quant Lab — see below
     asset_resolution.py   shared identity-resolution logic (see below)
     resolve_security.py   the security resolver (see "Security resolver" below)
     import_fingerprint.py   deterministic dedup id for statement imports with no
@@ -60,7 +74,9 @@ app/
     security_master/openfigi_adapter.py   OpenFIGI /v3/mapping — ISIN -> exchange listings
     persistence/orm.py        SQLAlchemy mapped tables (the ONLY module that knows the physical schema)
     persistence/repositories.py  SqlAssetRepo / SqlPortfolioRepo / SqlMarketDataRepo / SqlResolutionRepo / SqlNoteRepo / SqlChatRepo
-    market_data/yfinance_adapter.py, fx_adapter.py
+    market_data/yfinance_adapter.py, fx_adapter.py, twelve_data_adapter.py
+      twelve_data_adapter.py   HistoricalBarSourcePort — a second, keyed daily-bar source,
+                                used only to backfill Quant Lab calibration history
     scheduler.py               APScheduler jobs calling use cases (incl. run_resolver_job)
 
   api/                Inbound adapter: FastAPI
@@ -70,6 +86,7 @@ app/
                             (POST /api/assets/{id}/resolve itself lives in assets.py)
     routes/notes.py, chat.py   agent-written notes; portfolio_assistant's
                                 chat sessions (see "Portfolio intelligence" below)
+    routes/quant.py         Quant Lab — see below
     schemas.py            Pydantic REQUEST models only (see below)
 
 ai/                  LLM/agent layer, sibling to app/, never mixed into it —
@@ -89,6 +106,10 @@ ai/                  LLM/agent layer, sibling to app/, never mixed into it —
   mcp_servers/portfolio/, market_data/, analytics/, notes/  read (+ notes:
                              write) MCP servers wrapping the query/analytics
                              use cases and NoteRepo (Phase 8a-c)
+  mcp_servers/quant/          read-only Quant Lab tools (list_models,
+                             recommend_model, explain_run) — see
+                             plans/quant_lab.md; never triggers a
+                             simulation, that stays a UI-only action
   common/                shared building blocks every agent uses:
     jsonable.py             dataclass/Decimal/date/set -> JSON-safe dict
     llm.py                  pluggable model backend: OllamaChatClient,
@@ -366,6 +387,127 @@ SDK quirk, not a model problem — see `backend/ai/AGENTS.md`'s "MCP SDK
 gotcha" section for the full account, since it affects any future tool
 with that annotation shape too, not just these two agents).
 
+## Quant Lab (pluggable quantitative models + Monte Carlo playground)
+
+See `plans/quant_lab.md` for the full design. `domain/quant/` is a small
+plugin registry (`registry.py`'s `MODEL_REGISTRY`, populated by explicitly
+importing every model module in `domain/quant/models/__init__.py` — same
+shape as `container.BROKER_ADAPTERS`, no auto-discovery magic) around one
+shared interface (`types.py::QuantModel` — `calibrate(closes, params)` then
+`simulate(last_price, as_of, calibration, horizon_days, n_paths, seed,
+params)`). Five models are built: `linear_regression` (OLS on lagged
+returns/rolling vol/mean), `time_series_ar` (AR(p) via statsmodels'
+`AutoReg`), `black_scholes_gbm` (Geometric Brownian Motion), `heston`
+(stochastic volatility), and `hawkes_jump_diffusion` (GBM plus a
+Hawkes-clustered jump component) — see `plans/quant_lab_phase7_8.md` for
+the full mathematical derivation of GBM/Heston and
+`plans/quant_lab_phase10_hawkes.md` for Hawkes, including worked examples
+and why they're worth understanding, not just running. **Every model produces
+a Monte Carlo path ensemble, never a point forecast**, but via one of two
+genuinely different engines depending on the model family:
+
+- `linear_regression`/`time_series_ar` (family `"regression"`/
+  `"time_series"`) go through `bootstrap.py`'s
+  `simulate_by_residual_bootstrap()` — the model's own one-step forecast
+  rolled forward, resampling a shock from its in-sample residuals at each
+  step.
+- `black_scholes_gbm`/`heston`/`hawkes_jump_diffusion` (family
+  `"stochastic_process"`) step their own continuous-time process instead
+  and never touch `bootstrap.py`. GBM has an *exact* closed-form solution
+  (no discretization at all — one fully vectorized numpy call generates
+  every path); Heston has no closed form and is discretized with the
+  full-truncation Euler scheme (see `plans/quant_lab_phase7_8.md` section
+  3.4), vectorized across paths but looped over days. `hawkes_jump_diffusion`
+  overlays a Hawkes-clustered jump component (simulated exactly via Ogata's
+  thinning algorithm — `domain/quant/hawkes.py`) onto GBM's own closed-form
+  diffusion; the jump part is inherently sequential/path-specific so it's
+  looped over paths, not vectorized — see `plans/quant_lab_phase10_hawkes.md`
+  section 3. GBM/Heston use **annualized** parameters with `dt=1/252`, a
+  deliberate convention difference from the first two models' raw-daily-
+  log-return units — see `domain/quant/annualization.py` and
+  `plans/quant_lab_phase7_8.md` section 1.1 for why. `hawkes_jump_diffusion`
+  mixes conventions further still: its diffusive part is annualized like
+  GBM, but its Hawkes timing parameters (`μ`/`α`/`β`) are raw trading-day
+  units, deliberately not annualized — see
+  `plans/quant_lab_phase10_hawkes.md` section 4.3.
+
+Either way, this is what makes every model interchangeable everywhere else
+in the app (registry, use case, API, frontend, MCP server) with zero
+special-casing.
+
+`application/run_quant_simulation.py::RunQuantSimulationUseCase` is the one
+orchestrator both the REST API and the MCP server sit on top of: loads
+persisted bars, splits at a user-chosen date, calibrates + simulates,
+compares the ensemble against real holdout data when there's enough of it
+(`BacktestResult`), and persists a run's **recipe** (asset, model, split
+date, params, seed) plus a small percentile summary (`quant_runs`, migration
+`0005`) — **never the raw `n_paths × horizon_days` path array**.
+`replay(run_id)` recomputes paths
+deterministically from that recipe on demand (exact, because calibration
+only ever reads bars already persisted for a fixed date range and the RNG
+is seeded) — this is why `quant_runs` has no `paths` column despite the
+frontend needing full paths to redraw the chart. `explain(run_id)`, by
+contrast, is a pure DB read with no recompute at all, since calibration
+params/diagnostics/percentiles/backtest are already fully persisted.
+
+`application/backfill_quant_history.py::BackfillQuantHistoryUseCase` backs
+short/gappy yfinance history with a second, keyed source
+(`adapters/market_data/twelve_data_adapter.py::TwelveDataAdapter` — Twelve
+Data, free tier 800 req/day as of writing, verify before relying on it).
+Like the security resolver's "resolve now" and `search_assets.py`, this is
+an **explicit user action exception** to "never call a market-data port
+from a request handler": it only ever runs from `POST /api/quant/simulate`,
+never a background job. It fails soft (returns bars priced in a different
+currency than expected → discards them, same class of bug
+`yfinance_adapter.py`'s GBp fix addressed) and leaves state untouched if
+the fallback also comes up empty — the use case then reports "not enough
+history" (`InsufficientQuantHistoryError`, 422) rather than failing silently.
+
+`domain/quant/recommendation.py::recommend_model` is deterministic — cheap
+statistics (a Ljung-Box test for volatility clustering, a linear-trend R²,
+excess kurtosis) over persisted closes, no LLM — same "rules first, agent
+explains" posture the security resolver already established. Exposed at
+`GET /api/quant/assets/{id}/recommendation` and the `quant` MCP server's
+`recommend_model` tool.
+
+**Agent access is read-only/advisory by design** (confirmed with the user
+before building this): `ai/mcp_servers/quant/` has exactly three tools —
+`list_models`, `recommend_model`, `explain_run` — and no write tool at
+all. `portfolio_assistant`'s `SERVERS` dict includes all three, so a chat
+question like "what model fits my VWCE position?" works in the existing
+chat page, but an agent can never trigger `POST /api/quant/simulate`
+itself; that stays a UI-only action. Widening this later is a small,
+isolated change (one new tool, one line in `SERVERS`) once there's real
+usage to justify it.
+
+The one harder model still not built — rough Heston — is designed in
+`plans/quant_lab.md` section 9.3; it has no maintained free Python library
+and needs an options-implied-vol data source this app doesn't have to
+calibrate meaningfully. Hawkes jump-diffusion (`plans/quant_lab.md` section
+9.4's original design, superseded by the fuller
+`plans/quant_lab_phase10_hawkes.md`) is now built as `hawkes_jump_diffusion`
+— see that plan for the full derivation. The honest limitation stated
+there, not glossed over: this app only has daily closes, not the
+tick-by-tick event data Hawkes is usually fit on, so "jump day" detection
+(a return beyond `k` standard deviations) is itself an approximation, and
+with only a few hundred to a couple thousand days of history there's
+usually only a dozen to a few dozen detected jump days to fit from — below
+`MIN_EVENTS_FOR_MLE=8` of them, calibration falls back to literature-
+typical defaults (`calibration_diagnostics["source"] == "fallback_default"`)
+rather than reporting an MLE fit that looks precise but isn't.
+
+**`heston`'s `κ`/`ξ`/`ρ` are never fitted to an asset's own history —
+this is a deliberate, load-bearing decision, not a shortcut.** Only `v0`
+(realized variance over the last 20 trading days) and `θ` (realized
+variance over the full calibration window) are calibrated; the other
+three are literature-typical defaults exposed as user sliders. Fitting all
+five from a price series alone is a well-known unstable estimation problem
+(these three parameters need an options-implied-volatility surface to
+identify reliably, which this app has no data source for) — see
+`plans/quant_lab_phase7_8.md` section 3.3 before ever attempting to change
+this to a "fitted" value; the honest sliders are worth more than numbers
+that look calibrated but aren't.
+
 ## Known limitations (don't rediscover these)
 
 - **IBKR's `reqExecutions` / `ib.fills()` only return trades since midnight**,
@@ -488,3 +630,11 @@ or an API key for an OpenAI-compatible provider like Groq — plus
 `POST /api/resolutions/{id}/agent` on a `NEEDS_AGENT` resolution, or
 evaluate a model offline first — see
 `ai/agents/security_resolver/evaluation/README.md`.
+
+Quant Lab (`plans/quant_lab.md`, optional): `pip install -e ".[ai,quant]"`
+for `numpy`/`statsmodels`/`scipy` — the five models built so far work with
+no further setup. `TWELVE_DATA_API_KEY` (`.env`) is optional too: without
+it, an asset with too little yfinance history to calibrate just reports
+"not enough history" instead of backfilling. Try it at `/quant` in the
+frontend, or `python -m ai.mcp_servers.quant` for the read-only agent
+tools — see `ai/mcp_servers/quant/README.md`.

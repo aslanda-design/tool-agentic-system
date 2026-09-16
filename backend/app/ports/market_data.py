@@ -97,3 +97,28 @@ class FxRatePort(ABC):
     def get_daily_rates(self, base: str, quote: str, start: date, end: date) -> dict[date, Decimal]:
         """Daily historical FX closes, base->quote, for the given range.
         Never a single 'current' rate — history must use the rate of the day."""
+
+
+class HistoricalBarSourcePort(ABC):
+    """A secondary source of daily bars, used only to backfill calibration
+    history for the Quant Lab (application/backfill_quant_history.py) when
+    yfinance's persisted history is too short or too gappy — see
+    plans/quant_lab.md section 1. Deliberately narrower than MarketDataPort
+    (no quotes/intraday/search): this is the one thing it's for."""
+
+    @abstractmethod
+    def get_daily_history(
+        self,
+        symbol: str,
+        mic: str | None,
+        start: date,
+        end: date,
+        expected_currency: str | None = None,
+    ) -> list[BarData] | None:
+        """None = source unavailable/rate-limited — fail soft, same contract
+        as every other external port in this app (never raises for a
+        missing/rate-limited response). Never sends anything but the
+        symbol/MIC/date range — no account or holding data. When
+        `expected_currency` is given, an implementation should also return
+        None on a currency mismatch rather than bars priced in the wrong
+        currency (see TwelveDataAdapter's docstring for why)."""

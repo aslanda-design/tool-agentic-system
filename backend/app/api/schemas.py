@@ -75,3 +75,15 @@ class CreateChatSessionRequest(BaseModel):
 
 class ChatMessageRequest(BaseModel):
     message: str
+
+
+class SimulateRequest(BaseModel):
+    asset_id: int
+    model_key: str
+    split_date: date
+    horizon_days: int
+    n_paths: int
+    seed: int | None = (
+        None  # None -> a fresh random seed each call ("run again" without pinning it)
+    )
+    params: dict = {}

@@ -5,6 +5,7 @@ const NAV_ITEMS = [
   { to: '/search', label: 'Search', icon: '⌕' },
   { to: '/accounts', label: 'Accounts', icon: '▤' },
   { to: '/assistant', label: 'Assistant', icon: '◎' },
+  { to: '/quant', label: 'Quant Lab', icon: '∿' },
 ]
 
 export function Sidebar() {

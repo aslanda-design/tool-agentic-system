@@ -19,6 +19,7 @@ from app.api.routes import (
     notes,
     portfolio,
     positions,
+    quant,
     resolutions,
     sync,
 )
@@ -92,3 +93,4 @@ app.include_router(resolutions.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
 app.include_router(notes.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
+app.include_router(quant.router, prefix="/api")

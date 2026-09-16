@@ -272,3 +272,75 @@ export interface SendChatMessageResult {
   messages: ChatMessage[]
   error: string | null
 }
+
+// --- Quant Lab (see plans/quant_lab.md) -----------------------------------
+
+export interface ParamSpec {
+  key: string
+  label: string
+  kind: 'float' | 'int' | 'bool' | 'enum'
+  default: number | boolean | string
+  min: number | null
+  max: number | null
+  choices: string[] | null
+  help: string
+}
+
+export interface QuantModel {
+  key: string
+  display_name: string
+  description: string
+  family: 'regression' | 'time_series' | 'stochastic_process'
+  min_history_days: number
+  supports_calibration: boolean
+  param_specs: ParamSpec[]
+}
+
+export interface ModelRecommendation {
+  model_key: string
+  score: number
+  reason: string
+}
+
+export interface QuantBacktest {
+  covered_days: number
+  within_band: number
+  mean_abs_pct_error_median: number | null
+}
+
+export interface QuantRun {
+  id: number
+  asset_id: number
+  model_key: string
+  split_date: string
+  horizon_days: number
+  n_paths: number
+  seed: number
+  params: Record<string, number>
+  calibration_params: Record<string, number>
+  // Not every model's diagnostics are numeric — hawkes_jump_diffusion
+  // reports a "source" string and a log_likelihood that's null on its
+  // literature-default fallback path; rough_heston reports an "h_source"
+  // string. See CalibrationCard's formatDiagnosticValue.
+  calibration_diagnostics: Record<string, number | string | boolean | null>
+  dates: string[]
+  percentiles: Record<string, number[]> // {"lower": [...], "median": [...], "upper": [...]} — band width is per-model `confidence_level`
+  paths: number[][] // n_paths x horizon_days price levels
+  backtest: QuantBacktest | null
+  created_by: 'user' | 'agent'
+  note: string
+  created_at: string
+}
+
+// Same as QuantRun but without `paths`/`dates` — the /quant/runs list endpoint's shape.
+export interface QuantRunSummary {
+  id: number
+  asset_id: number
+  model_key: string
+  split_date: string
+  horizon_days: number
+  n_paths: number
+  created_by: 'user' | 'agent'
+  created_at: string
+  backtest: QuantBacktest | null
+}

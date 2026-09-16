@@ -34,9 +34,16 @@ from app.domain.models import (
     Transaction,
     TransactionType,
 )
+from app.domain.quant.types import BacktestResult, QuantRunRecord
 from app.ports.chat import ChatRepo
 from app.ports.notes import NoteRepo
-from app.ports.repositories import AssetRepo, MarketDataRepo, PortfolioRepo, ResolutionRepo
+from app.ports.repositories import (
+    AssetRepo,
+    MarketDataRepo,
+    PortfolioRepo,
+    QuantRunRepo,
+    ResolutionRepo,
+)
 
 from .orm import (
     AccountORM,
@@ -53,6 +60,7 @@ from .orm import (
     PortfolioSnapshotORM,
     PositionSnapshotORM,
     PriceBarORM,
+    QuantRunORM,
     QuoteORM,
     ResolutionCandidateORM,
     TransactionORM,
@@ -1053,3 +1061,83 @@ class SqlChatRepo(ChatRepo):
             stmt.order_by(ChatMessageORM.created_at.desc()).limit(limit)
         ).scalars()
         return [_message_from_orm(r) for r in reversed(list(rows))]
+
+
+def _quant_run_from_orm(row: QuantRunORM) -> QuantRunRecord:
+    backtest = None
+    if row.backtest is not None:
+        # Fall back to the pre-rename keys (within_90pct_band /
+        # mean_abs_pct_error_p50, from when the confidence band was fixed
+        # at 90%/median) so a run persisted before that rename still reads
+        # back instead of KeyError-ing — this JSONB blob is frozen at
+        # write time, same "old rows keep their old shape" reasoning as
+        # the fp1 import fingerprint recipe (see backend/AGENTS.md).
+        within = row.backtest.get("within_band", row.backtest.get("within_90pct_band"))
+        mean_abs = row.backtest.get("mean_abs_pct_error_median", row.backtest.get("mean_abs_pct_error_p50"))
+        backtest = BacktestResult(
+            covered_days=row.backtest["covered_days"],
+            within_band=within,
+            mean_abs_pct_error_median=mean_abs,
+        )
+    return QuantRunRecord(
+        id=row.id,
+        asset_id=row.asset_id,
+        model_key=row.model_key,
+        split_date=row.split_date,
+        horizon_days=row.horizon_days,
+        n_paths=row.n_paths,
+        seed=row.seed,
+        params=dict(row.params or {}),
+        calibration_params=dict(row.calibration_params or {}),
+        calibration_diagnostics=dict(row.calibration_diagnostics or {}),
+        percentiles=dict(row.percentiles or {}),
+        backtest=backtest,
+        created_by=row.created_by,
+        note=row.note,
+        created_at=row.created_at,
+    )
+
+
+class SqlQuantRunRepo(QuantRunRepo):
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def create(self, record: QuantRunRecord) -> int:
+        backtest_dict = None
+        if record.backtest is not None:
+            backtest_dict = {
+                "covered_days": record.backtest.covered_days,
+                "within_band": record.backtest.within_band,
+                "mean_abs_pct_error_median": record.backtest.mean_abs_pct_error_median,
+            }
+        row = QuantRunORM(
+            asset_id=record.asset_id,
+            model_key=record.model_key,
+            split_date=record.split_date,
+            horizon_days=record.horizon_days,
+            n_paths=record.n_paths,
+            seed=record.seed,
+            params=dict(record.params),
+            calibration_params=dict(record.calibration_params),
+            calibration_diagnostics=dict(record.calibration_diagnostics),
+            percentiles=dict(record.percentiles),
+            backtest=backtest_dict,
+            created_by=record.created_by,
+            note=record.note,
+        )
+        self.session.add(row)
+        self.session.flush()
+        return row.id
+
+    def get(self, run_id: int) -> QuantRunRecord | None:
+        row = self.session.get(QuantRunORM, run_id)
+        return _quant_run_from_orm(row) if row else None
+
+    def list_for_asset(self, asset_id: int, limit: int = 20) -> list[QuantRunRecord]:
+        rows = self.session.execute(
+            select(QuantRunORM)
+            .where(QuantRunORM.asset_id == asset_id)
+            .order_by(QuantRunORM.created_at.desc())
+            .limit(limit)
+        ).scalars()
+        return [_quant_run_from_orm(r) for r in rows]

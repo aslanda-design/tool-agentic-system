@@ -6,6 +6,7 @@ the divisor (100x for a pence-quoted London listing)."""
 
 from __future__ import annotations
 
+import math
 from decimal import Decimal
 
 from app.adapters.market_data.yfinance_adapter import _dec, _normalize_currency
@@ -44,3 +45,13 @@ def test_dec_divides_by_divisor():
     assert _dec("9241", Decimal(100)) == Decimal("92.41")
     assert _dec("107.02") == Decimal("107.02")
     assert _dec(None, Decimal(100)) is None
+
+
+def test_dec_treats_nan_as_missing():
+    # yfinance/pandas represent a still-open trading day's incomplete bar as
+    # NaN rather than omitting the row. Decimal(str(nan)) would otherwise
+    # produce Decimal('NaN'), which later breaks JSON encoding of the whole
+    # /assets/{id}/history response (json.dumps rejects NaN) instead of just
+    # that one bar being missing.
+    assert _dec(math.nan) is None
+    assert _dec(math.nan, Decimal(100)) is None

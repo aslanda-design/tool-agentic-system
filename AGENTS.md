@@ -189,3 +189,55 @@ Paper trading port is 7497, live is 7496.
       intelligence agents above (e.g. quantitative signals, news/sentiment
       — see the plan's own "Beyond Phase 8" section for ideas, none
       committed)
+- [x] Quant Lab, Phases 1-6 of `plans/quant_lab.md`: a pluggable
+      quantitative-model infrastructure (`backend/app/domain/quant/` —
+      registry + a shared Monte Carlo residual-bootstrap engine) proven
+      with two intentionally simple models (multi-parameter linear
+      regression, an AR(p) time-series model via statsmodels), a Twelve
+      Data adapter (`backend/app/adapters/market_data/twelve_data_adapter.py`)
+      backfilling calibration history when yfinance's is too short, the
+      orchestrating use case (`RunQuantSimulationUseCase` — calibrate,
+      simulate, backtest against real holdout data, persist a run's
+      recipe+summary, never raw paths), `/api/quant/*` routes, a `/quant`
+      frontend page (asset/model picker, split-date control, an animated
+      Monte Carlo fan chart, backtest verdict), and a read-only `quant`
+      MCP server wired into `portfolio_assistant` (list/recommend/explain,
+      never triggers a simulation itself). Verified against a real
+      Postgres instance and real HTTP round trips end to end; interactive
+      browser verification of the animated chart itself is still pending
+      (see the plan's implementation notes).
+- [x] Quant Lab, Phases 7-8 of `plans/quant_lab_phase7_8.md`:
+      Black-Scholes (Geometric Brownian Motion — an exact closed-form
+      simulator, no discretization) and Heston (stochastic volatility,
+      full-truncation Euler discretization) added to the same registry
+      with zero changes needed anywhere else (API, frontend, MCP server) —
+      the payoff of the Phase 1-6 architecture. `v0`/`θ` are genuinely
+      calibrated from an asset's own history; Heston's `κ`/`ξ`/`ρ` are
+      deliberately literature-typical user sliders, not fitted (a real
+      price series alone can't reliably identify them — see the plan's
+      section 3.3). Verified with real closed-form math, not just "doesn't
+      crash": GBM's simulated percentiles are checked against the exact
+      lognormal quantile formula, and Heston at `ξ=0, v0=θ` is checked
+      against that same formula (a structural fact — Heston collapses to
+      GBM there), plus a real Postgres + HTTP round trip end to end. Rough
+      Heston remains designed but not built — see `plans/quant_lab.md`
+      section 9.3 (no maintained free rough-vol library).
+- [x] Quant Lab, Phase 10 of `plans/quant_lab_phase10_hawkes.md`: Hawkes
+      jump-diffusion (GBM plus a self-exciting, Hawkes-clustered jump
+      component — "a shock makes another shock more likely for a while,
+      then that fades") added to the same registry, again with zero
+      changes needed elsewhere. Jump days are detected from an asset's own
+      history (a return beyond `k` standard deviations); with at least
+      `MIN_EVENTS_FOR_MLE=8` of them the Hawkes timing parameters
+      (`μ`/`α`/`β`) are genuinely fit by maximum likelihood
+      (`domain/quant/hawkes.py::fit_hawkes_mle`, box-constrained so the
+      branching ratio can never reach the unstable `n>=1` regime), falling
+      back to literature-typical defaults otherwise
+      (`calibration_diagnostics["source"]`, same honesty principle as
+      Heston's un-fitted `κ`/`ξ`/`ρ`). Forward simulation uses Ogata's
+      thinning algorithm — exact, not a discretization. Verified against
+      the process's own closed-form facts (long-run event rate `μ/(1-n)`,
+      simulate-then-recover parameter fitting, an `α=0` collapse to a
+      plain Poisson process) rather than just "doesn't crash." Also ties
+      off `recommend_model`'s excess-kurtosis flag, which previously
+      pointed at a model that didn't exist yet.

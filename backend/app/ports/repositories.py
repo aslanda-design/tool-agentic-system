@@ -23,6 +23,7 @@ from app.domain.models import (
     PortfolioSnapshotPoint,
     Transaction,
 )
+from app.domain.quant.types import QuantRunRecord
 
 
 class AssetRepo(ABC):
@@ -323,7 +324,9 @@ class ResolutionRepo(ABC):
         """The resolution for this asset whose status is not SUPERSEDED, if any."""
 
     @abstractmethod
-    def list_by_status(self, statuses: list[ResolutionStatus], limit: int = 50) -> list[ResolutionDTO]: ...
+    def list_by_status(
+        self, statuses: list[ResolutionStatus], limit: int = 50
+    ) -> list[ResolutionDTO]: ...
 
     @abstractmethod
     def add_candidate(self, resolution_id: int, candidate: Candidate) -> int:
@@ -332,7 +335,9 @@ class ResolutionRepo(ABC):
         new candidate id."""
 
     @abstractmethod
-    def set_status(self, resolution_id: int, status: ResolutionStatus, decided_by: str | None, note: str) -> None: ...
+    def set_status(
+        self, resolution_id: int, status: ResolutionStatus, decided_by: str | None, note: str
+    ) -> None: ...
 
     @abstractmethod
     def select_candidate(self, resolution_id: int, candidate_id: int) -> None:
@@ -364,3 +369,22 @@ class ResolutionRepo(ABC):
         `['rules', 'agent']` to see automated decisions but not manual
         ones), newest first. Powers a spot-check view of what the resolver
         has been doing — see GET /api/resolutions/recent."""
+
+
+class QuantRunRepo(ABC):
+    """Persistence for the Quant Lab (application/run_quant_simulation.py)
+    — see plans/quant_lab.md section 6.1. Stores each run's RECIPE (asset,
+    model, split date, params, seed) plus a percentile summary — never the
+    raw path ensemble; RunQuantSimulationUseCase.replay() recomputes paths
+    deterministically from the recipe instead."""
+
+    @abstractmethod
+    def create(self, record: QuantRunRecord) -> int:
+        """`record.id` is ignored — the new row's id is returned."""
+
+    @abstractmethod
+    def get(self, run_id: int) -> QuantRunRecord | None: ...
+
+    @abstractmethod
+    def list_for_asset(self, asset_id: int, limit: int = 20) -> list[QuantRunRecord]:
+        """Most recent first."""
