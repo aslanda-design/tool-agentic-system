@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -266,6 +267,9 @@ class AgentRunORM(Base):
     duration_ms: Mapped[int] = mapped_column(Integer)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    # Tool RAG's retrieval trace for this turn (plans/tool_rag.md section 5)
+    # — null when TOOL_RAG_ENABLED is false, since no retrieval ran.
+    tool_retrieval: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
 
 class AiNoteORM(Base):
@@ -346,3 +350,33 @@ class QuantRunORM(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     __table_args__ = (Index("ix_quant_runs_asset_created", "asset_id", "created_at"),)
+
+
+class ToolIndexORM(Base):
+    """One embeddable unit for one MCP tool — either its description or one
+    hand-authored example query (see plans/tool_rag.md sections 3.1/3.4;
+    app/domain/tool_rag/types.py::ToolDocument is this row's domain
+    counterpart). Vector dimensionality is fixed at 768
+    (`nomic-embed-text`'s) by this table's migration
+    (`0006_tool_index.py`) — switching TOOL_RAG_EMBEDDING_MODEL to a model
+    with a different dimension needs a new migration, not just a `.env`
+    change; see backend/ai/AGENTS.md's tool RAG rule."""
+
+    __tablename__ = "tool_index"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    server_module: Mapped[str] = mapped_column(String(100))
+    tool_name: Mapped[str] = mapped_column(String(100))
+    doc_kind: Mapped[str] = mapped_column(String(20))  # "description" | "example_query"
+    doc_text: Mapped[str] = mapped_column(Text)
+    category: Mapped[str] = mapped_column(String(40))
+    content_hash: Mapped[str] = mapped_column(String(64))
+    embedding_model: Mapped[str] = mapped_column(String(60))
+    token_estimate: Mapped[int] = mapped_column(Integer)
+    embedding: Mapped[list[float]] = mapped_column(Vector(768))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("server_module", "tool_name", "doc_kind", "doc_text", name="uq_tool_index_doc"),
+        Index("ix_tool_index_server_tool", "server_module", "tool_name"),
+    )

@@ -1,0 +1,44 @@
+{
+  "get_portfolio_summary": {
+    "example_queries": [
+      "what's my total portfolio worth right now?",
+      "how much have I invested versus what it's worth today?",
+      "give me an overview of my whole portfolio"
+    ]
+  },
+  "list_positions": {
+    "example_queries": [
+      "what positions do I currently hold?",
+      "show me every holding across all my accounts",
+      "list my current stock and fund positions"
+    ]
+  },
+  "get_allocation": {
+    "example_queries": [
+      "how is my portfolio allocated by asset class?",
+      "what percentage of my portfolio is in ETFs versus stocks?",
+      "break down my holdings by category"
+    ]
+  },
+  "get_value_history": {
+    "example_queries": [
+      "how has my portfolio value changed over the last year?",
+      "show me the value-over-time chart data",
+      "plot my portfolio's growth since I started investing"
+    ]
+  },
+  "list_accounts": {
+    "example_queries": [
+      "what brokerage accounts do I have connected?",
+      "list all my accounts",
+      "which accounts are tracked in this app?"
+    ]
+  },
+  "list_transactions": {
+    "example_queries": [
+      "show me my recent buy and sell transactions",
+      "what trades have I made in this account this year?",
+      "list transaction history for this holding"
+    ]
+  }
+}

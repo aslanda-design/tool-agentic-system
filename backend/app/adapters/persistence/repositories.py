@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, tuple_
 from sqlalchemy.orm import Session
 
 from app.domain.errors import AssetConflictError, AssetNotFoundError
@@ -35,6 +35,7 @@ from app.domain.models import (
     TransactionType,
 )
 from app.domain.quant.types import BacktestResult, QuantRunRecord
+from app.domain.tool_rag.types import RetrievalCandidate, ToolDocument, ToolKey
 from app.ports.chat import ChatRepo
 from app.ports.notes import NoteRepo
 from app.ports.repositories import (
@@ -44,6 +45,7 @@ from app.ports.repositories import (
     QuantRunRepo,
     ResolutionRepo,
 )
+from app.ports.tool_rag import ToolIndexRepo
 
 from .orm import (
     AccountORM,
@@ -63,6 +65,7 @@ from .orm import (
     QuantRunORM,
     QuoteORM,
     ResolutionCandidateORM,
+    ToolIndexORM,
     TransactionORM,
 )
 
@@ -900,6 +903,7 @@ class SqlResolutionRepo(ResolutionRepo):
             completion_tokens=run.completion_tokens,
             duration_ms=run.duration_ms,
             error=run.error,
+            tool_retrieval=run.tool_retrieval,
         )
         self.session.add(row)
         self.session.flush()
@@ -1141,3 +1145,137 @@ class SqlQuantRunRepo(QuantRunRepo):
             .limit(limit)
         ).scalars()
         return [_quant_run_from_orm(r) for r in rows]
+
+
+class SqlToolIndexRepo(ToolIndexRepo):
+    """Postgres + pgvector + pg_trgm implementation of ToolIndexRepo — see
+    plans/tool_rag.md sections 3.4/4.1. `dense_search`/`lexical_search`
+    over-fetch (`limit * _OVERFETCH`) because a tool can have several rows
+    (its description plus each example query — the "multi-vector document"
+    design, section 3.1) and this collapses them to one best-scoring row
+    per tool before returning, in Python rather than a window function, to
+    keep the SQL here simple and legible (a `DISTINCT ON` query would be
+    the faster version if this ever needs to scale past a few hundred
+    tools)."""
+
+    _OVERFETCH = 4
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get_content_hashes(self) -> dict[tuple[str, str, str, str], str]:
+        rows = self.session.execute(
+            select(
+                ToolIndexORM.server_module,
+                ToolIndexORM.tool_name,
+                ToolIndexORM.doc_kind,
+                ToolIndexORM.doc_text,
+                ToolIndexORM.content_hash,
+            )
+        ).all()
+        return {(r.server_module, r.tool_name, r.doc_kind, r.doc_text): r.content_hash for r in rows}
+
+    def upsert_documents(
+        self,
+        documents: list[ToolDocument],
+        embeddings: list[list[float]],
+        embedding_model: str,
+        token_estimates: dict[ToolKey, int],
+    ) -> None:
+        for doc, embedding in zip(documents, embeddings, strict=True):
+            existing = self.session.execute(
+                select(ToolIndexORM).where(
+                    ToolIndexORM.server_module == doc.server_module,
+                    ToolIndexORM.tool_name == doc.tool_name,
+                    ToolIndexORM.doc_kind == doc.doc_kind,
+                    ToolIndexORM.doc_text == doc.doc_text,
+                )
+            ).scalar_one_or_none()
+            token_estimate = token_estimates.get((doc.server_module, doc.tool_name), 0)
+            if existing is not None:
+                existing.category = doc.category
+                existing.content_hash = doc.content_hash
+                existing.embedding_model = embedding_model
+                existing.token_estimate = token_estimate
+                existing.embedding = embedding
+                existing.updated_at = datetime.now(timezone.utc)
+            else:
+                self.session.add(
+                    ToolIndexORM(
+                        server_module=doc.server_module,
+                        tool_name=doc.tool_name,
+                        doc_kind=doc.doc_kind,
+                        doc_text=doc.doc_text,
+                        category=doc.category,
+                        content_hash=doc.content_hash,
+                        embedding_model=embedding_model,
+                        token_estimate=token_estimate,
+                        embedding=embedding,
+                    )
+                )
+        self.session.flush()
+
+    def delete_missing(self, current_keys: set[tuple[str, str, str, str]]) -> int:
+        deleted = 0
+        for row in self.session.execute(select(ToolIndexORM)).scalars():
+            if (row.server_module, row.tool_name, row.doc_kind, row.doc_text) not in current_keys:
+                self.session.delete(row)
+                deleted += 1
+        self.session.flush()
+        return deleted
+
+    def dense_search(
+        self,
+        query_embedding: list[float],
+        embedding_model: str,
+        candidate_keys: set[ToolKey] | None,
+        limit: int,
+    ) -> list[RetrievalCandidate]:
+        distance = ToolIndexORM.embedding.cosine_distance(query_embedding)
+        stmt = (
+            select(
+                ToolIndexORM.server_module,
+                ToolIndexORM.tool_name,
+                ToolIndexORM.doc_text,
+                ToolIndexORM.token_estimate,
+                (1 - distance).label("score"),
+            )
+            .where(ToolIndexORM.embedding_model == embedding_model)
+            .order_by(distance)
+            .limit(limit * self._OVERFETCH)
+        )
+        if candidate_keys is not None:
+            stmt = stmt.where(tuple_(ToolIndexORM.server_module, ToolIndexORM.tool_name).in_(list(candidate_keys)))
+        rows = self.session.execute(stmt).all()
+        return _best_per_tool(rows, limit)
+
+    def lexical_search(
+        self, query_text: str, candidate_keys: set[ToolKey] | None, limit: int
+    ) -> list[RetrievalCandidate]:
+        similarity = func.similarity(ToolIndexORM.doc_text, query_text)
+        stmt = (
+            select(
+                ToolIndexORM.server_module,
+                ToolIndexORM.tool_name,
+                ToolIndexORM.doc_text,
+                ToolIndexORM.token_estimate,
+                similarity.label("score"),
+            )
+            .where(similarity > 0.05)
+            .order_by(similarity.desc())
+            .limit(limit * self._OVERFETCH)
+        )
+        if candidate_keys is not None:
+            stmt = stmt.where(tuple_(ToolIndexORM.server_module, ToolIndexORM.tool_name).in_(list(candidate_keys)))
+        rows = self.session.execute(stmt).all()
+        return _best_per_tool(rows, limit)
+
+
+def _best_per_tool(rows, limit: int) -> list[RetrievalCandidate]:
+    best: dict[ToolKey, RetrievalCandidate] = {}
+    for row in rows:
+        key = (row.server_module, row.tool_name)
+        score = float(row.score)
+        if key not in best or score > best[key].score:
+            best[key] = RetrievalCandidate(key=key, score=score, doc_text=row.doc_text, token_estimate=row.token_estimate)
+    return sorted(best.values(), key=lambda c: c.score, reverse=True)[:limit]

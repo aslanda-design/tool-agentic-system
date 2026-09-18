@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.adapters.brokers.ibkr import IBKRAdapter
 from app.adapters.brokers.ibkr_flex import IBKRFlexAdapter
+from app.adapters.embeddings.factory import build_embedding_port
 from app.adapters.market_data.fx_adapter import YFinanceFxRates
 from app.adapters.market_data.twelve_data_adapter import TwelveDataAdapter
 from app.adapters.market_data.yfinance_adapter import YFinanceMarketData
@@ -22,6 +23,7 @@ from app.adapters.persistence.repositories import (
     SqlPortfolioRepo,
     SqlQuantRunRepo,
     SqlResolutionRepo,
+    SqlToolIndexRepo,
 )
 from app.adapters.security_master.openfigi_adapter import OpenFigiSecurityMaster
 from app.application.asset_chart import GetAssetChartUseCase
@@ -35,11 +37,14 @@ from app.application.query_asset import QueryAssetUseCase
 from app.application.query_market_data import QueryMarketDataUseCase
 from app.application.query_portfolio import QueryPortfolioUseCase
 from app.application.refresh_market_data import RefreshMarketDataUseCase
+from app.application.refresh_tool_index import RefreshToolIndexUseCase
 from app.application.resolve_security import ResolveSecurityUseCase
+from app.application.retrieve_tools import RetrieveToolsUseCase
 from app.application.run_quant_simulation import RunQuantSimulationUseCase
 from app.application.search_assets import SearchAssetsUseCase
 from app.application.sync_broker import SyncBrokerUseCase
 from app.config import settings
+from app.domain.tool_rag.policy import SelectionPolicy
 
 if TYPE_CHECKING:
     # Only for the annotations below — see build_security_resolver_agent's
@@ -81,6 +86,10 @@ def chat_repo(db: Session) -> SqlChatRepo:
 
 def quant_run_repo(db: Session) -> SqlQuantRunRepo:
     return SqlQuantRunRepo(db)
+
+
+def tool_index_repo(db: Session) -> SqlToolIndexRepo:
+    return SqlToolIndexRepo(db)
 
 
 def build_sync_broker_use_case(db: Session, broker_key: str) -> SyncBrokerUseCase:
@@ -211,3 +220,18 @@ def build_run_quant_simulation_use_case(db: Session) -> RunQuantSimulationUseCas
         quant_run_repo(db),
         build_backfill_quant_history_use_case(db),
     )
+
+
+def build_refresh_tool_index_use_case(db: Session) -> RefreshToolIndexUseCase:
+    return RefreshToolIndexUseCase(tool_index_repo(db), build_embedding_port())
+
+
+def build_retrieve_tools_use_case(db: Session) -> RetrieveToolsUseCase:
+    policy = SelectionPolicy(
+        top_k=settings.tool_rag_top_k,
+        max_schema_tokens=settings.tool_rag_max_schema_tokens,
+        min_score=settings.tool_rag_min_score,
+        max_per_server=settings.tool_rag_max_per_server,
+        skip_below_tool_count=settings.tool_rag_skip_below_tool_count,
+    )
+    return RetrieveToolsUseCase(tool_index_repo(db), build_embedding_port(), policy)

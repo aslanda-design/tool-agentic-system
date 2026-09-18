@@ -72,5 +72,43 @@ class Settings(BaseSettings):
     # Only a symbol/MIC/date range is ever sent, never account/holding data.
     twelve_data_api_key: str = ""
 
+    # --- Tool RAG (see plans/tool_rag.md) ---
+    # Off by default: at today's ~30-tool catalog, an agent's hand-curated
+    # tool allowlist (now doubling as its retrieval *ceiling* — see
+    # ai/agents/portfolio_assistant/agent.py) already fits comfortably
+    # under the "small models get worse with more tools" budget, so
+    # retrieval has nothing to improve yet (plans/tool_rag.md section 1.1).
+    # Turning this on requires the tool_index table populated first — see
+    # ai/common/tool_rag/build_index.py — or every turn immediately hits
+    # the "ceiling too small" fallback and behaves exactly as if this were
+    # still false.
+    tool_rag_enabled: bool = False
+
+    # Embedding backend for indexing tool docs and embedding each turn's
+    # query — same "provider is a config choice" shape as agent_provider
+    # above, but for embeddings rather than chat (see
+    # app/adapters/embeddings/factory.py). "ollama" (local, default, keeps
+    # tool-doc/query text on-machine) or "openai" (any OpenAI-compatible
+    # /embeddings endpoint).
+    tool_rag_embedding_provider: str = "ollama"
+    tool_rag_embedding_base_url: str = "http://localhost:11434"
+    tool_rag_embedding_api_key: str = ""
+    tool_rag_embedding_model: str = "nomic-embed-text"
+    # Must match the tool_index.embedding column's fixed dimensionality
+    # (768, set by migration 0006_tool_index.py) — switching to a model
+    # with a different dimension needs a new migration, not just this
+    # value, or every insert/search against that column fails outright.
+    tool_rag_embedding_dimensions: int = 768
+
+    # Selection policy (plans/tool_rag.md section 4.4).
+    tool_rag_top_k: int = 8
+    tool_rag_max_schema_tokens: int = 1500
+    tool_rag_min_score: float = 0.35
+    tool_rag_max_per_server: int = 4
+    # A ceiling with this many tools or fewer skips retrieval entirely and
+    # exposes it in full — the safety net that makes enabling this system
+    # a no-op for any agent that doesn't need it yet.
+    tool_rag_skip_below_tool_count: int = 12
+
 
 settings = Settings()

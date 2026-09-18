@@ -1,0 +1,16 @@
+{
+  "save_note": {
+    "example_queries": [
+      "write a note flagging what you found",
+      "record an observation about this import for later review",
+      "save a note about this account's mispriced trades"
+    ]
+  },
+  "list_notes": {
+    "example_queries": [
+      "what notes have been written about my portfolio?",
+      "show me past agent-written notes for this account",
+      "has anything been flagged for this account before?"
+    ]
+  }
+}

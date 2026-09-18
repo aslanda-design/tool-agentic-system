@@ -1,6 +1,11 @@
 services:
   db:
-    image: postgres:16-alpine
+    # pgvector/pgvector is a drop-in Postgres 16 image with the pgvector
+    # extension binary added — same major version and on-disk data format
+    # as postgres:16-alpine, so the existing pgdata volume mounts
+    # unchanged. Needed for the tool_index table's ANN search (see
+    # plans/tool_rag.md sections 3.4/10, migration 0006_tool_index.py).
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-investment_tracker}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-investment_tracker}

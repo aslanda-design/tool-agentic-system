@@ -94,6 +94,35 @@ design; this file is the enforceable rule set for anything added under here.
     (FastAPI thread-pools it) has no such hazard — `resolutions.py` and
     `chat.py`'s routes call `run()`/`send_message()` (sync) with no issue.
 
+12. **Every new MCP tool ships with `example_queries` for tool RAG — no
+    exceptions, even while `TOOL_RAG_ENABLED` stays `false`.** See
+    `plans/tool_rag.md`. Concretely, when you add a tool under
+    `mcp_servers/<server>/tools/`:
+    - Add an entry for it to `ai/common/tool_rag/examples/<server>.json`:
+      `{"<tool_name>": {"example_queries": ["...", "...", "..."]}}`, at
+      least 3 realistic user utterances that should retrieve it (phrased
+      as a user would ask, not as the tool's docstring reads — see
+      `plans/tool_rag.md` section 3.1 for why that gap matters). Add a
+      `"category"` key only if the server-name default
+      (`ai.common.tool_rag.catalog.enumerate_catalog`'s fallback) is
+      wrong for this tool.
+    - `backend/tests/test_tool_rag_examples_consistency.py` enforces this
+      automatically — it fails if a tool file has no matching entry, or an
+      entry references a tool that no longer exists. Don't skip or weaken
+      that test to get a PR green; fix the examples file instead.
+    - If `TOOL_RAG_ENABLED=true` in your environment, also run
+      `python -m ai.common.tool_rag.build_index --server <module>` after
+      merging — the new tool is invisible to retrieval-enabled agents
+      until the index is rebuilt (it's still directly callable by any
+      agent whose fixed ceiling names it explicitly; only *retrieval*
+      needs the index).
+    - An agent's existing `SERVERS`/`AGENT_TOOLS`/`CEILING`-style dict is
+      unaffected either way — it remains the hard authorization boundary
+      (`plans/tool_rag.md` section 4.6). Adding examples makes a tool
+      *findable* by retrieval; it never makes a tool *callable* by an
+      agent that didn't already list it (or the server it lives on with
+      `None`) in that dict.
+
 ## MCP SDK gotcha — a tool's return type shapes whether `call_tool` sees it
 
 **A tool function annotated to return a bare `dict`** (not `dict | None`,

@@ -198,8 +198,12 @@ def test_writes_a_fallback_reply_on_unexpected_error(monkeypatch):
 
 
 def test_select_tools_returns_the_fixed_allowlist_across_four_servers():
-    servers = agent_module._select_tools("anything")
+    # TOOL_RAG_ENABLED defaults to false — _select_tools returns SERVERS
+    # unchanged and no retrieval trace, without touching the retriever,
+    # an embedding model, or the database (plans/tool_rag.md section 1.1).
+    servers, tool_retrieval = asyncio.run(agent_module._select_tools("anything"))
 
+    assert tool_retrieval is None
     assert set(servers) == {
         "ai.mcp_servers.portfolio",
         "ai.mcp_servers.market_data",

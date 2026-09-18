@@ -1,0 +1,23 @@
+{
+  "list_models": {
+    "example_queries": [
+      "what quantitative models are available in the Quant Lab?",
+      "which simulation models can I run for this asset?",
+      "list the models I can use to forecast a price"
+    ]
+  },
+  "recommend_model": {
+    "example_queries": [
+      "which model best fits this stock's behavior?",
+      "is there a better model for this ETF than GBM?",
+      "recommend a simulation model for this holding"
+    ]
+  },
+  "explain_run": {
+    "example_queries": [
+      "explain what this Quant Lab run predicted",
+      "what did the Heston simulation show for my largest holding?",
+      "summarize the backtest result of my last simulation run"
+    ]
+  }
+}

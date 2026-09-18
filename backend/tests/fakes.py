@@ -30,6 +30,7 @@ from app.domain.models import (
     Transaction,
 )
 from app.domain.quant.types import QuantRunRecord
+from app.domain.tool_rag.types import RetrievalCandidate, ToolDocument, ToolKey
 
 
 class FakeAssetRepo:
@@ -598,3 +599,114 @@ class FakeQuantRunRepo:
             (r for r in self._runs.values() if r.asset_id == asset_id), key=lambda r: r.created_at, reverse=True
         )
         return rows[:limit]
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
+    norm_a = sum(x * x for x in a) ** 0.5
+    norm_b = sum(y * y for y in b) ** 0.5
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+class FakeEmbeddingPort:
+    """Deterministic, hand-supplied embeddings — no real Ollama/OpenAI call
+    (see plans/tool_rag.md section 9's "replay, don't hit the real thing"
+    instinct, same as security_resolver/evaluation/replay.py). `vectors`
+    maps exact text -> vector; unrecognized text embeds to an all-zero
+    vector (cosine similarity 0 against anything), which is deliberate —
+    a test that needs a specific candidate to score well must say so
+    explicitly by putting its text in `vectors`."""
+
+    def __init__(self, vectors: dict[str, list[float]] | None = None, dimensions: int = 4) -> None:
+        self._vectors = vectors or {}
+        self._dimensions = dimensions
+        self.model_name = "fake-embedding-v1"
+
+    @property
+    def dimensions(self) -> int:
+        return self._dimensions
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return [self._vectors.get(t, [0.0] * self._dimensions) for t in texts]
+
+
+class FakeToolIndexRepo:
+    """In-memory ToolIndexRepo — see module docstring. Emulates hybrid
+    search with plain Python (cosine similarity for "dense", word-overlap
+    for "lexical") instead of pgvector/pg_trgm SQL, so
+    RetrieveToolsUseCase/RefreshToolIndexUseCase are fully testable
+    without a real Postgres+pgvector instance — this project's automated
+    tests use fakes over real DB round trips throughout (see
+    FakeQuantRunRepo above), and pgvector is no exception."""
+
+    def __init__(self) -> None:
+        self._rows: dict[tuple[str, str, str, str], dict] = {}
+
+    def get_content_hashes(self) -> dict[tuple[str, str, str, str], str]:
+        return {key: row["content_hash"] for key, row in self._rows.items()}
+
+    def upsert_documents(
+        self,
+        documents: list[ToolDocument],
+        embeddings: list[list[float]],
+        embedding_model: str,
+        token_estimates: dict[ToolKey, int],
+    ) -> None:
+        for doc, embedding in zip(documents, embeddings, strict=True):
+            key = (doc.server_module, doc.tool_name, doc.doc_kind, doc.doc_text)
+            self._rows[key] = {
+                "category": doc.category,
+                "content_hash": doc.content_hash,
+                "embedding_model": embedding_model,
+                "embedding": embedding,
+                "doc_text": doc.doc_text,
+                "token_estimate": token_estimates.get((doc.server_module, doc.tool_name), 0),
+            }
+
+    def delete_missing(self, current_keys: set[tuple[str, str, str, str]]) -> int:
+        stale = [key for key in self._rows if key not in current_keys]
+        for key in stale:
+            del self._rows[key]
+        return len(stale)
+
+    def _best_per_tool(self, scored: list[tuple[ToolKey, float, str, int]], limit: int) -> list[RetrievalCandidate]:
+        best: dict[ToolKey, RetrievalCandidate] = {}
+        for key, score, doc_text, token_estimate in scored:
+            if key not in best or score > best[key].score:
+                best[key] = RetrievalCandidate(key=key, score=score, doc_text=doc_text, token_estimate=token_estimate)
+        return sorted(best.values(), key=lambda c: c.score, reverse=True)[:limit]
+
+    def dense_search(
+        self,
+        query_embedding: list[float],
+        embedding_model: str,
+        candidate_keys: set[ToolKey] | None,
+        limit: int,
+    ) -> list[RetrievalCandidate]:
+        scored = []
+        for (module, name, _kind, _text), row in self._rows.items():
+            if row["embedding_model"] != embedding_model:
+                continue
+            if candidate_keys is not None and (module, name) not in candidate_keys:
+                continue
+            score = _cosine(query_embedding, row["embedding"])
+            scored.append(((module, name), score, row["doc_text"], row["token_estimate"]))
+        return self._best_per_tool(scored, limit)
+
+    def lexical_search(
+        self, query_text: str, candidate_keys: set[ToolKey] | None, limit: int
+    ) -> list[RetrievalCandidate]:
+        query_words = set(query_text.lower().split())
+        scored = []
+        for (module, name, _kind, _text), row in self._rows.items():
+            if candidate_keys is not None and (module, name) not in candidate_keys:
+                continue
+            doc_words = set(row["doc_text"].lower().split())
+            overlap = query_words & doc_words
+            if not overlap or not query_words:
+                continue
+            score = len(overlap) / len(query_words)
+            scored.append(((module, name), score, row["doc_text"], row["token_estimate"]))
+        return self._best_per_tool(scored, limit)

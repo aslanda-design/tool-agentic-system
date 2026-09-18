@@ -18,6 +18,11 @@ dependencies = [
     "httpx>=0.27",
     "python-multipart>=0.0.12",
     "openpyxl>=3.1",
+    # SQLAlchemy Vector type for the tool_index table (plans/tool_rag.md) —
+    # a hard dependency, not an optional extra, because
+    # app/adapters/persistence/orm.py imports it unconditionally (every
+    # model must be registered on Base.metadata for Alembic to see it).
+    "pgvector>=0.3",
 ]
 
 [project.optional-dependencies]

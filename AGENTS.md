@@ -241,3 +241,25 @@ Paper trading port is 7497, live is 7496.
       plain Poisson process) rather than just "doesn't crash." Also ties
       off `recommend_model`'s excess-kurtosis flag, which previously
       pointed at a model that didn't exist yet.
+- [x] Tool RAG, Phases 1-3 of `plans/tool_rag.md`: per-turn, retrieval-based
+      tool selection for agents — a `tool_index` table (pgvector +
+      `pg_trgm`, migration `0006`; the `db` compose service is now
+      `pgvector/pgvector:pg16`), a pluggable `EmbeddingPort` (Ollama
+      `nomic-embed-text` by default, or any OpenAI-compatible
+      `/embeddings` endpoint), hybrid dense+lexical candidate generation
+      fused via Reciprocal Rank Fusion, and a selection policy (pinning,
+      token-aware budget, per-server diversity cap, confidence-threshold
+      fallback to "expose everything") — see `backend/app/domain/tool_rag/`,
+      `backend/app/application/{refresh_tool_index,retrieve_tools}.py`,
+      `backend/ai/common/tool_rag/`. Wired into `portfolio_assistant`
+      behind `TOOL_RAG_ENABLED` (`false` by default — see the plan's
+      section 1.1 for why this app's current ~30-tool catalog doesn't need
+      it turned on yet; the fallback rule makes leaving it off and turning
+      it on behaviorally identical at this scale). Every agent turn's
+      retrieval trace is persisted to `agent_runs.tool_retrieval` for
+      audit (plan section 5). Reranking (Phase 4) and the retrieval-quality
+      evaluation harness (Phase 5) are designed but not built — see the
+      plan's phase table. `backend/ai/AGENTS.md` rule 12 requires every new
+      MCP tool to ship `example_queries` in
+      `ai/common/tool_rag/examples/<server>.json`, enforced by
+      `backend/tests/test_tool_rag_examples_consistency.py`.

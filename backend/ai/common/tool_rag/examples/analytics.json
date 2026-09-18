@@ -1,0 +1,37 @@
+{
+  "get_returns": {
+    "example_queries": [
+      "what's my portfolio's return this year?",
+      "how has this holding performed over the last month?",
+      "calculate my overall investment return"
+    ]
+  },
+  "get_concentration": {
+    "example_queries": [
+      "is my portfolio too concentrated in one holding?",
+      "what's my largest position as a percentage of the portfolio?",
+      "check my portfolio's diversification"
+    ]
+  },
+  "get_currency_exposure": {
+    "example_queries": [
+      "how much of my portfolio is exposed to USD?",
+      "break down my holdings by currency",
+      "what's my exposure to non-EUR currencies?"
+    ]
+  },
+  "get_drawdown": {
+    "example_queries": [
+      "what's the biggest drop my portfolio has had?",
+      "show me my maximum drawdown",
+      "how far did my portfolio fall from its peak?"
+    ]
+  },
+  "check_import_prices": {
+    "example_queries": [
+      "were any of the trades in this import mispriced?",
+      "flag trades that executed far from the day's market close",
+      "sanity-check the prices in this statement import"
+    ]
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "search_listings": {
+    "example_queries": [
+      "find the ticker for this fund by name",
+      "search market data listings for Vanguard S&P 500",
+      "which exchange listings match this company name?"
+    ]
+  },
+  "lookup_isin": {
+    "example_queries": [
+      "look up this ISIN in OpenFIGI",
+      "what listings exist for isin IE00B4L5Y983?",
+      "resolve this ISIN to a set of exchange listings"
+    ]
+  },
+  "validate_listing": {
+    "example_queries": [
+      "check if this candidate listing actually has recent price data",
+      "does this symbol/currency pairing look valid before I accept it?",
+      "confirm this listing before mapping the holding to it"
+    ]
+  },
+  "add_candidate": {
+    "example_queries": [
+      "add this listing as a candidate for the resolution",
+      "record a new candidate found via search for this asset",
+      "attach a manually found listing to this open resolution"
+    ]
+  },
+  "save_security_mapping": {
+    "example_queries": [
+      "accept this candidate as the asset's market-data listing",
+      "finalize the mapping to this ticker",
+      "confirm and save this resolution's chosen listing"
+    ]
+  },
+  "flag_for_review": {
+    "example_queries": [
+      "I can't confidently decide — hand this off to a human",
+      "flag this ambiguous resolution for manual review",
+      "none of the candidates are a safe match, escalate it"
+    ]
+  },
+  "get_resolution": {
+    "example_queries": [
+      "show me the details of this open resolution",
+      "what candidates exist for this pending asset mapping?",
+      "fetch the broker context and candidate list for resolution 42"
+    ]
+  },
+  "list_pending_resolutions": {
+    "example_queries": [
+      "how many assets still need a resolved listing?",
+      "list every resolution waiting on review or an agent",
+      "are there any unresolved security mappings right now?"
+    ]
+  },
+  "resolve_isin": {
+    "example_queries": [
+      "run the deterministic resolver for this ISIN",
+      "try to auto-resolve this asset's listing from its ISIN",
+      "kick off ISIN-based resolution for this holding"
+    ]
+  }
+}

@@ -13,7 +13,12 @@ Two things distinguish this agent from every other one in `ai/agents/`:
 2. **Session memory.** Each call replays prior turns from `chat_messages`
    (via `run_agent`'s `history` param) before the new message, so the
    conversation actually remembers what was asked before — see
-   `_load_history`'s docstring for exactly what gets replayed and why."""
+   `_load_history`'s docstring for exactly what gets replayed and why.
+
+It's also the first (and, while `AGENT_ENABLED`/`TOOL_RAG_ENABLED` roll out
+gradually, only) agent wired to Tool RAG — see `_select_tools` and
+plans/tool_rag.md. Off by default; SERVERS below is unaffected either
+way, since it's also this agent's retrieval ceiling."""
 
 from __future__ import annotations
 
@@ -23,6 +28,7 @@ from pathlib import Path
 from ai.common.agent_loop import AgentRunResult, run_agent
 from ai.common.llm import build_chat_client
 from ai.common.mcp_client import open_mcp_servers
+from ai.common.tool_rag.retriever import ToolRetriever
 from app.adapters.persistence.session import SessionLocal
 from app.config import settings
 from app.container import chat_repo, resolution_repo
@@ -37,6 +43,12 @@ AGENT_NAME = "portfolio_assistant"
 # straddle three of them). Adding a new capability later — a future
 # quantitative-signals server, say — is a one-line addition to this dict;
 # nothing else about this agent changes.
+#
+# Doubles as this agent's tool-RAG *ceiling* (plans/tool_rag.md section
+# 4.6) once TOOL_RAG_ENABLED=true: the superset retrieval is only ever
+# allowed to narrow *within*, never grow beyond — the read-only/advisory
+# boundary below is exactly as binding with retrieval on as it is today
+# with it off.
 SERVERS: dict[str, set[str] | None] = {
     "ai.mcp_servers.portfolio": {"get_portfolio_summary", "list_positions", "get_allocation", "get_value_history"},
     "ai.mcp_servers.market_data": {"get_asset"},
@@ -56,17 +68,27 @@ MAX_HISTORY_MESSAGES = 20
 
 PROMPT_PATH = Path(__file__).with_name("prompt.md")
 
+# No terminal_tools for this agent (it's conversational — see the module
+# docstring), so nothing needs pinning against a retrieval miss.
+_tool_retriever = ToolRetriever(pinned=set())
 
-def _select_tools(user_message: str) -> dict[str, set[str] | None]:
-    """Which MCP servers/tools this turn gets — today, always the fixed
-    allowlist above (`user_message` is unused, kept as a parameter on
-    purpose). This is the extension point for a future "tool RAG" step:
-    once there are more tools/servers than fit in one prompt, swap this
-    for a function that embeds `user_message` against every available
-    tool's description and returns just the top-K most relevant ones per
-    server — nothing else in this agent, or in open_mcp_servers/run_agent,
-    would need to change."""
-    return SERVERS
+
+async def _select_tools(user_message: str) -> tuple[dict[str, set[str] | None], dict | None]:
+    """Which MCP servers/tools this turn gets, and the retrieval trace to
+    attach to this run's audit row (None when retrieval didn't run).
+
+    With `TOOL_RAG_ENABLED=false` (the default — see plans/tool_rag.md
+    section 1.1), always the fixed allowlist above, unchanged. With it
+    true, `ai.common.tool_rag.retriever.ToolRetriever` narrows *within*
+    that same dict (now this agent's capability *ceiling*, plans/tool_rag.md
+    section 4.6) to the tools most relevant to `user_message` — retrieval
+    can shrink what gets exposed for a given turn, never grow it beyond
+    SERVERS above. Async because this may make a real embedding call and a
+    real DB round trip; `_run_loop` awaits it directly (never
+    `asyncio.run()` from inside it — see backend/ai/AGENTS.md rule 11)."""
+    if not settings.tool_rag_enabled:
+        return SERVERS, None
+    return await _tool_retriever.select(user_message, SERVERS)
 
 
 def _auto_title(user_message: str) -> str:
@@ -94,8 +116,9 @@ class PortfolioAssistantAgent:
 
     async def _send_message(self, session_id: int, user_message: str) -> AgentRunResult:
         history = self._load_history(session_id)
+        tool_retrieval: dict | None = None
         try:
-            result = await asyncio.wait_for(
+            result, tool_retrieval = await asyncio.wait_for(
                 self._run_loop(history, user_message), timeout=settings.agent_timeout_seconds
             )
         except TimeoutError:
@@ -106,12 +129,13 @@ class PortfolioAssistantAgent:
             # identical reasoning for never letting this propagate.
             result = AgentRunResult(status="ERROR", steps=0, error=str(exc))
         self._persist_turn(session_id, user_message, result, is_first_turn=not history)
-        self._record_run(result)
+        self._record_run(result, tool_retrieval)
         return result
 
-    async def _run_loop(self, history: list[dict], user_message: str) -> AgentRunResult:
-        async with open_mcp_servers(_select_tools(user_message)) as session:
-            return await run_agent(
+    async def _run_loop(self, history: list[dict], user_message: str) -> tuple[AgentRunResult, dict | None]:
+        ceiling, tool_retrieval = await _select_tools(user_message)
+        async with open_mcp_servers(ceiling) as session:
+            result = await run_agent(
                 system_prompt=PROMPT_PATH.read_text(encoding="utf-8"),
                 user_message=user_message,
                 tools=await session.tool_schemas(),
@@ -121,6 +145,7 @@ class PortfolioAssistantAgent:
                 terminal_tools=None,
                 history=history,
             )
+            return result, tool_retrieval
 
     def _load_history(self, session_id: int) -> list[dict]:
         """Only each past turn's final text (never the tool calls/results
@@ -149,10 +174,12 @@ class PortfolioAssistantAgent:
         finally:
             db.close()
 
-    def _record_run(self, result: AgentRunResult) -> None:
+    def _record_run(self, result: AgentRunResult, tool_retrieval: dict | None = None) -> None:
         """Audit trail, same table every other agent uses
         (`resolution_id=None` — a chat turn isn't tied to any resolution,
-        the same way import_reviewer's runs aren't)."""
+        the same way import_reviewer's runs aren't). `tool_retrieval` is
+        this turn's retrieval trace (plans/tool_rag.md section 5) — None
+        whenever TOOL_RAG_ENABLED is false."""
         db = SessionLocal()
         try:
             resolution_repo(db).add_agent_run(
@@ -168,6 +195,7 @@ class PortfolioAssistantAgent:
                     completion_tokens=result.completion_tokens,
                     duration_ms=result.duration_ms,
                     error=result.error,
+                    tool_retrieval=tool_retrieval,
                 )
             )
             db.commit()

@@ -120,6 +120,10 @@ class AgentRunRecord:
     completion_tokens: int
     duration_ms: int
     error: str | None = None
+    # Tool RAG's retrieval trace for this turn (plans/tool_rag.md section 5)
+    # — a plain dict (dataclasses.asdict of a RetrievalDecision), or None
+    # when TOOL_RAG_ENABLED is false / retrieval didn't run for this agent.
+    tool_retrieval: dict | None = None
 
 
 @dataclass(slots=True)

@@ -1,0 +1,30 @@
+{
+  "get_asset": {
+    "example_queries": [
+      "what's the current price of this asset?",
+      "give me details about this ticker",
+      "look up this holding's latest quote"
+    ]
+  },
+  "get_price_history": {
+    "example_queries": [
+      "show me the price history for this stock",
+      "what did this ETF's price do over the last 6 months?",
+      "get daily bars for this asset"
+    ]
+  },
+  "get_fx_rate": {
+    "example_queries": [
+      "what's the USD to EUR exchange rate?",
+      "convert this holding's currency to my base currency",
+      "what was the FX rate on this date?"
+    ]
+  },
+  "get_data_freshness": {
+    "example_queries": [
+      "is any of my price data stale?",
+      "are there any holdings without a recent price?",
+      "check whether market data needs refreshing"
+    ]
+  }
+}
