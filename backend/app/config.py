@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     # app_env=dev. "oidc": real login via an OIDC provider (Phase 1b).
     auth_mode: str = "dev"
 
+    # Process roles (docs/saas/01 §4.1). Defaults suit single-container local
+    # dev; in production set both false on the API and run `python -m app.worker`
+    # once, with migrations as a separate release step (`alembic upgrade head`).
+    run_migrations_on_start: bool = True
+    run_scheduler_in_api: bool = True
+
     # --- OIDC login (auth_mode="oidc"; docs/saas/03) ---
     # Any standards-compliant provider works; local dev uses the free,
     # self-hosted Keycloak in docker-compose.yml (`--profile auth`).

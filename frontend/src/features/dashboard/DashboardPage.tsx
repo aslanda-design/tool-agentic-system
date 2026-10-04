@@ -63,7 +63,7 @@ function UnpricedBanner({ count }: { count: number }) {
       {count} asset{count === 1 ? '' : 's'} {count === 1 ? 'is' : 'are'} missing a market-data ticker, so{' '}
       {count === 1 ? 'its' : 'their'} value and P&amp;L can't be shown yet.{' '}
       <Link to="/accounts" className="font-medium underline underline-offset-2">
-        Map {count === 1 ? 'it' : 'them'} on the Accounts page
+        Map {count === 1 ? 'it' : 'them'} on the Brokerage accounts page
       </Link>
       .
     </div>
@@ -143,7 +143,7 @@ export function DashboardPage() {
               title="No history yet"
               description={
                 selectedAssetIds.length > 0
-                  ? 'No snapshot history for this selection yet — try rebuilding snapshots on the Accounts page.'
+                  ? 'No snapshot history for this selection yet — try rebuilding snapshots on the Brokerage accounts page.'
                   : 'Sync a broker or add a manual holding, then rebuild snapshots.'
               }
             />
@@ -208,7 +208,7 @@ export function DashboardPage() {
           <CardBody>
             <EmptyState
               title="No positions yet"
-              description="Connect Interactive Brokers or add a manual holding on the Accounts page."
+              description="Connect Interactive Brokers or add a manual holding on the Brokerage accounts page."
             />
           </CardBody>
         )}

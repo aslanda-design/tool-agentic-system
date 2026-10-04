@@ -28,6 +28,14 @@ _Avoid_: User data (too vague), tenant data
 Public market facts stored once and shared by every User: assets and their identifiers, prices, quotes, FX rates, the market-intel cache, and security resolutions. Contains nothing about any User.
 _Avoid_: Global data, shared data
 
+**Private asset**:
+An asset a User created through an import or manual entry and that only that User can see. It stays private until the resolver verifies it.
+_Avoid_: Custom asset (unless it will never be verified), stub (informal)
+
+**Shared asset**:
+A verified asset that every User reads and prices from. Only the system (resolver, Operator) may write it.
+_Avoid_: Global asset
+
 **Security resolution**:
 The decision of which market-data listing prices a given security. A fact about the security, not about a User, so it is Reference data and is reviewed by the operator, not by Users.
 _Avoid_: Asset mapping (legacy name)
@@ -48,5 +56,5 @@ The product's legal posture: it reports and analyses what a User already holds a
 _Avoid_: Advice, recommendation, signal
 
 **Operator**:
-The person running the service (currently the founder). Reviews Security resolutions and administers the platform; has no routine access to Private data.
+The person running the service (currently the founder). A User flagged `is_operator`. Reviews Security resolutions and administers Reference data; has no routine access to Private data.
 _Avoid_: Admin (ambiguous with User roles)

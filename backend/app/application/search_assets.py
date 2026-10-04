@@ -73,6 +73,9 @@ class SearchAssetsUseCase:
                     # asset page once a quote is fetched, or can correct it).
                     currency=hit.currency or "USD",
                     exchange=hit.exchange,
+                    # A market-data search hit is a real, provider-listed
+                    # instrument, not a user's free text — safe to share.
+                    shared=True,
                 )
                 self.asset_repo.add_identifier(asset.id, IdentifierScheme.YFINANCE, hit.symbol)
             results.append(

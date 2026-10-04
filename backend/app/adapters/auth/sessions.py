@@ -46,6 +46,7 @@ class ResolvedSession:
     user_id: uuid.UUID
     recent_auth_at: datetime
     email: str
+    is_operator: bool = False
 
 
 def create_session(db: Session, user_id: uuid.UUID, user_agent: str | None) -> str:
@@ -70,7 +71,7 @@ def resolve_session(db: Session, raw: str) -> ResolvedSession | None:
     db.commit()
     if row is None:
         return None
-    return ResolvedSession(row.user_id, row.recent_auth_at, row.email)
+    return ResolvedSession(row.user_id, row.recent_auth_at, row.email, row.is_operator)
 
 
 def delete_session(db: Session, raw: str) -> None:

@@ -12,7 +12,7 @@ import uuid
 import pytest
 from sqlalchemy import text
 
-from app.adapters.persistence.session import SessionLocal, scoped_session
+from app.adapters.persistence.session import SessionLocal, current_user_id, scoped_session
 from app.api.deps import CurrentUser, get_current_user
 from tests.conftest import _ensure_user
 
@@ -58,10 +58,13 @@ def as_user():
 
 @pytest.fixture
 def anon_db():
-    """A session with NO tenant identity at all."""
+    """A session with NO tenant identity at all (the suite-wide autouse identity
+    is deliberately removed for the duration)."""
+    token = current_user_id.set(None)
     db = SessionLocal()
     try:
         yield db
     finally:
         db.rollback()
         db.close()
+        current_user_id.reset(token)

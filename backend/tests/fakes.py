@@ -59,6 +59,7 @@ class FakeAssetRepo:
         exchange: str | None = None,
         isin: str | None = None,
         needs_mapping: bool = False,
+        shared: bool = False,
     ) -> Asset:
         asset = Asset(
             id=self._next_id,
@@ -141,6 +142,19 @@ class FakeAssetRepo:
             asset.share_class_figi = share_class_figi
         if name is not None:
             asset.name = name
+
+    # --- private vs shared assets: the fake keeps every asset shared ---------
+    def get_owner(self, asset_id):
+        return None
+
+    def promote_to_shared(self, asset_id):
+        return None
+
+    def find_shared_by_identifier(self, scheme, value):
+        return None
+
+    def merge_into(self, source_id, target_id):
+        raise NotImplementedError
 
 
 @dataclass

@@ -8,6 +8,7 @@ request-scoped session) and commits once, same as an API request would.
 from __future__ import annotations
 
 import logging
+from contextlib import nullcontext
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -15,7 +16,12 @@ from app import container
 from app.adapters.market_data.fx_adapter import YFinanceFxRates
 from app.adapters.market_data.yfinance_adapter import YFinanceMarketData
 from app.adapters.persistence.repositories import SqlAssetRepo, SqlMarketDataRepo, SqlPortfolioRepo
-from app.adapters.persistence.session import SessionLocal, for_each_user
+from app.adapters.persistence.session import (
+    SessionLocal,
+    for_each_user,
+    system_scope,
+    user_scope,
+)
 from app.application.build_snapshots import BuildSnapshotsUseCase
 from app.application.refresh_market_data import RefreshMarketDataUseCase
 from app.config import settings
@@ -86,21 +92,38 @@ def run_resolver_job() -> None:
     all)."""
     if not settings.resolver_enabled:
         return
-    session = SessionLocal()
-    try:
-        asset_ids = container.resolution_repo(session).list_assets_to_resolve()
+    # System mode: this job promotes/merges private stubs into shared assets.
+    # Each asset is then resolved AS ITS OWNER (the resolution context reads the
+    # owner's private transactions/accounts), in its own transaction, so one
+    # user's bad asset can neither leak into nor block another's.
+    with system_scope():
+        listing = SessionLocal()
+        try:
+            asset_ids = container.resolution_repo(listing).list_assets_to_resolve()
+            owners = {aid: container.asset_repo(listing).get_owner(aid) for aid in asset_ids}
+        except Exception:
+            logger.exception("Security resolver job failed to list assets")
+            return
+        finally:
+            listing.close()
         if not asset_ids:
             return
-        use_case = container.build_resolve_security_use_case(session)
+
         auto_accepted = 0
         for asset_id in asset_ids:
-            try:
-                result = use_case.resolve_asset(asset_id)
-                session.commit()
-            except Exception:
-                session.rollback()
-                logger.exception("Security resolver failed for asset_id=%s", asset_id)
-                continue
+            owner = owners[asset_id]
+            with user_scope(owner) if owner else nullcontext():
+                session = SessionLocal()
+                try:
+                    use_case = container.build_resolve_security_use_case(session)
+                    result = use_case.resolve_asset(asset_id)
+                    session.commit()
+                except Exception:
+                    session.rollback()
+                    logger.exception("Security resolver failed for asset_id=%s", asset_id)
+                    continue
+                finally:
+                    session.close()
             if result.status is ResolutionStatus.AUTO_ACCEPTED:
                 auto_accepted += 1
         logger.info(
@@ -113,11 +136,6 @@ def run_resolver_job() -> None:
             for_each_user(_refresh_for_user)
             for_each_user(_snapshots_for_user)
             logger.info("Post-resolver refresh done for all users")
-    except Exception:
-        session.rollback()
-        logger.exception("Security resolver job failed")
-    finally:
-        session.close()
 
 
 def _gap_fill_for_user(session) -> None:

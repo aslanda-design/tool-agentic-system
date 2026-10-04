@@ -51,6 +51,7 @@ class UserORM(Base):
     email: Mapped[str] = mapped_column(Text, default="")
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     plan: Mapped[str] = mapped_column(Text, default="free")
+    is_operator: Mapped[bool] = mapped_column(Boolean, default=False)
     ai_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -75,13 +76,23 @@ class AssetORM(Base):
     __tablename__ = "assets"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    symbol: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)
     name: Mapped[str] = mapped_column(String(200), default="")
     asset_class: Mapped[str] = mapped_column(String(20))
     currency: Mapped[str] = mapped_column(String(3))
     exchange: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    isin: Mapped[str | None] = mapped_column(String(12), unique=True, nullable=True)
+    isin: Mapped[str | None] = mapped_column(String(12), nullable=True)
     needs_mapping: Mapped[bool] = mapped_column(Boolean, default=False)
+    # NULL = shared (verified Reference data); set = private to that user until
+    # the resolver verifies and promotes/merges it (migration 0011, ADR 0005).
+    # Uniqueness of symbol/isin is per scope via partial indexes in the migration.
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        server_default=text("app_current_user_id()"),
+        nullable=True,
+        index=True,
+    )
     # OpenFIGI's shareClassFIGI — identifies the security across every exchange
     # it lists on, independent of which listing we chose to price it with.
     share_class_figi: Mapped[str | None] = mapped_column(String(12), nullable=True)

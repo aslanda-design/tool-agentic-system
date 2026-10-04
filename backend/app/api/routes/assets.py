@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import container
-from app.api.deps import get_db
+from app.api.deps import CurrentUser, get_current_user, get_db, get_operator_db, get_user_system_db
 from app.api.schemas import AssetUpdateRequest, MapAssetRequest
 from app.domain.errors import AssetConflictError, AssetNotFoundError, ListingNotFoundError
 from app.domain.listings import ResolutionStatus
@@ -23,12 +23,12 @@ def list_needs_mapping(db: Session = Depends(get_db)):
 
 
 @router.get("/{asset_id}/map-suggestions")
-def suggest_asset_mapping(asset_id: int, db: Session = Depends(get_db)):
+def suggest_asset_mapping(asset_id: int, db: Session = Depends(get_operator_db)):
     return container.build_map_asset_use_case(db).suggest_tickers(asset_id)
 
 
 @router.post("/{asset_id}/map")
-def map_asset(asset_id: int, request: MapAssetRequest, db: Session = Depends(get_db)):
+def map_asset(asset_id: int, request: MapAssetRequest, db: Session = Depends(get_operator_db)):
     try:
         container.build_map_asset_use_case(db).resolve(asset_id, request.yfinance_symbol)
     except ListingNotFoundError as exc:
@@ -48,14 +48,22 @@ def map_asset(asset_id: int, request: MapAssetRequest, db: Session = Depends(get
 
 
 @router.post("/{asset_id}/resolve")
-def resolve_asset_now(asset_id: int, db: Session = Depends(get_db)):
+def resolve_asset_now(
+    asset_id: int,
+    db: Session = Depends(get_user_system_db),
+    user: CurrentUser = Depends(get_current_user),
+):
     """Run the security resolver (application/resolve_security.py) for one
     asset right now, rather than waiting for the background job (see
     adapters/scheduler.py). An explicit, infrequent user action — makes
     real OpenFIGI/Yahoo calls, which is why this isn't triggered from a
     plain page load. Refreshes market data and rebuilds snapshots
     immediately when the rules auto-accept a listing."""
-    if container.asset_repo(db).get(asset_id) is None:
+    repo = container.asset_repo(db)
+    # Only a user's OWN private asset: this session runs in system mode so the
+    # resolver can promote/merge it, which makes this check the access control.
+    # (Shared assets are the Operator's; foreign private ones are invisible.)
+    if repo.get(asset_id) is None or repo.get_owner(asset_id) != user.id:
         raise HTTPException(status_code=404, detail="Asset not found")
     resolution = container.build_resolve_security_use_case(db).resolve_asset(asset_id)
     db.commit()

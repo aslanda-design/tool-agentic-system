@@ -37,6 +37,7 @@ class CurrentUser:
     id: uuid.UUID
     email: str = ""
     recent_auth_at: datetime | None = None
+    is_operator: bool = False
 
 
 def get_current_user(request: Request, db: Annotated[Session, Depends(raw_db)]) -> CurrentUser:
@@ -55,7 +56,9 @@ def get_current_user(request: Request, db: Annotated[Session, Depends(raw_db)]) 
         resolved = sessions.resolve_session(db, raw)
         if resolved is None:
             raise HTTPException(status_code=401, detail="Session expired")
-        return CurrentUser(resolved.user_id, resolved.email, resolved.recent_auth_at)
+        return CurrentUser(
+            resolved.user_id, resolved.email, resolved.recent_auth_at, resolved.is_operator
+        )
 
     if settings.auth_mode == "dev" and settings.app_env == "dev":
         uid = db.execute(
@@ -63,7 +66,7 @@ def get_current_user(request: Request, db: Annotated[Session, Depends(raw_db)]) 
             {"s": LEGACY_DEV_SUBJECT, "e": "legacy@localhost"},
         ).scalar_one()
         db.commit()
-        return CurrentUser(id=uid, email="legacy@localhost")
+        return CurrentUser(id=uid, email="legacy@localhost", is_operator=True)
     raise HTTPException(status_code=401, detail="Not authenticated")
 
 
@@ -75,3 +78,30 @@ def get_db(user: Annotated[CurrentUser, Depends(get_current_user)]):
     finally:
         db.close()
 
+
+def require_operator(user: Annotated[CurrentUser, Depends(get_current_user)]) -> CurrentUser:
+    if not user.is_operator:
+        # 404, not 403: don't advertise that operator routes exist
+        raise HTTPException(status_code=404, detail="Not found")
+    return user
+
+
+def get_user_system_db(user: Annotated[CurrentUser, Depends(get_current_user)]):
+    """The caller's identity PLUS system mode — for a user-triggered action
+    that must write shared Reference data on the user's behalf (resolving one
+    of their own assets). The route must itself verify ownership first."""
+    db = scoped_session(user.id, system=True)
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def get_operator_db(_: Annotated[CurrentUser, Depends(require_operator)]):
+    """System-mode session with NO tenant identity, for Operator routes that
+    administer shared Reference data (resolution review)."""
+    db = scoped_session(system=True)
+    try:
+        yield db
+    finally:
+        db.close()

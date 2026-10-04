@@ -119,7 +119,14 @@ Done and verified (582 tests green, including 20 in `backend/tests/tenancy/`):
 
 Login (added 2026-10-05, 610 backend tests + 12 frontend tests green): OIDC authorization-code + PKCE with a backend-for-frontend session (`app/adapters/auth/`, `app/api/routes/auth.py`, migration `0010`): opaque HttpOnly cookie, only its SHA-256 stored, idle + absolute expiry, log-out-everywhere, CSRF header, state/nonce/PKCE, ID-token validation (pinned algorithms, alg=none and HMAC-confusion tests), open-redirect-safe `next`. Free self-hosted Keycloak behind `docker compose --profile auth` with an imported dev realm. Frontend `AuthGate` + Sign out. **Not yet verified against a live Keycloak** (unit tests use a local RSA key and a fake provider; the real round trip needs ~700 MB RAM).
 
-Still open in Phase 1: `assets.owner_user_id` private custom assets (Q15), Operator-only resolver routes, rename Account to Brokerage Account, move scheduler out of the API process, user-scoped factory for the remaining direct `SessionLocal()` agent call sites (they currently rely on the route's `user_scope`).
+**Phase 1 completed (2026-10-05)** — 634 backend tests, 12 frontend tests, `tsc`, `vite build`, `ruff` all green:
+- Private vs shared assets (ADR 0012, migration `0011`): user-created assets are private; shared assets writable only in system mode; the resolver promotes a verified stub or merges it into its shared twin (refused safely when an account already holds both); local search cannot enumerate what other users hold; symbol/ISIN uniqueness per scope.
+- Operator role (`users.is_operator`): resolver review and manual ticker mapping are Operator-only (404 for users); a user can only trigger resolution of their OWN private asset. Frontend shows the review card to Operators and a "Verify automatically" button to users.
+- Process split: `python -m app.worker` runs the scheduler under a Postgres advisory lock (a second worker exits); `RUN_SCHEDULER_IN_API` / `RUN_MIGRATIONS_ON_START` (default true for local dev) let production run API replicas without either.
+- Agents that touch user data use `user_session()` (refuses to run without an identity; a test forbids bare `SessionLocal()` there). The security resolver is the system-mode exception.
+- UI copy: "Account" is now "Brokerage account" for users. Internal code, table and route names (`accounts`, `/api/accounts`) deliberately stay: renaming them is churn with no user-facing value and a migration risk.
+
+Known follow-ups carried into Phase 2 (none block the closed beta): a live end-to-end run against a real Keycloak; deduplicating market-data refresh across users (currently once per holder); the per-user cost of private assets that never verify; moving `asset_resolutions` context (broker symbol/name of a user's holding) behind Operator-only access is done at the route level but those rows are not row-level secured.
 
 ### Phase 2 — Hardening, market data, deployment (≈4–5 wks)
 

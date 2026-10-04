@@ -131,4 +131,9 @@ def logout(request: Request, db: Annotated[Session, Depends(raw_db)]):
 
 @router.get("/me")
 def me(user: Annotated[CurrentUser, Depends(get_current_user)]):
-    return {"id": str(user.id), "email": user.email, "auth_mode": settings.auth_mode}
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "auth_mode": settings.auth_mode,
+        "is_operator": user.is_operator,
+    }

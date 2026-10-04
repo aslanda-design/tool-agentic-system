@@ -6,12 +6,14 @@ boundary and commits once per request after a use case completes.
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, select, tuple_
+from sqlalchemy import exists, func, or_, select, text, tuple_
 from sqlalchemy.orm import Session
 
+from app.adapters.persistence.session import system_flag
 from app.domain.errors import AssetConflictError, AssetNotFoundError
 from app.domain.listings import (
     AgentRunRecord,
@@ -172,8 +174,13 @@ class SqlAssetRepo(AssetRepo):
         return _asset_from_orm(row) if row else None
 
     def get_by_symbol(self, symbol: str) -> Asset | None:
+        # A shared and an own private asset may briefly share a symbol (until the
+        # resolver merges them); the shared one wins.
         row = self.session.execute(
-            select(AssetORM).where(AssetORM.symbol == symbol)
+            select(AssetORM)
+            .where(AssetORM.symbol == symbol)
+            .order_by(AssetORM.owner_user_id.is_(None).desc())
+            .limit(1)
         ).scalar_one_or_none()
         return _asset_from_orm(row) if row else None
 
@@ -192,7 +199,11 @@ class SqlAssetRepo(AssetRepo):
         exchange: str | None = None,
         isin: str | None = None,
         needs_mapping: bool = False,
+        shared: bool = False,
     ) -> Asset:
+        """Private to the current user by default (the DB fills owner_user_id).
+        `shared=True` is only for provider-verified catalogue listings (a search
+        hit) and needs system mode, enabled here for just this one insert."""
         row = AssetORM(
             symbol=symbol,
             name=name,
@@ -202,8 +213,16 @@ class SqlAssetRepo(AssetRepo):
             isin=isin,
             needs_mapping=needs_mapping,
         )
-        self.session.add(row)
-        self.session.flush()
+        if shared:
+            from sqlalchemy import null
+
+            row.owner_user_id = null()  # explicit NULL, not the identity default
+            with system_flag(self.session):
+                self.session.add(row)
+                self.session.flush()
+        else:
+            self.session.add(row)
+            self.session.flush()
         return _asset_from_orm(row)
 
     def add_identifier(self, asset_id: int, scheme: IdentifierScheme, value: str) -> None:
@@ -223,9 +242,12 @@ class SqlAssetRepo(AssetRepo):
         row = self.session.get(AssetORM, asset_id)
         if row is not None and not row.isin:
             existing = self.session.execute(
-                select(AssetORM).where(AssetORM.isin == isin)
-            ).scalar_one_or_none()
-            if existing is None:  # isin has a unique constraint — don't collide with another asset
+                select(AssetORM).where(
+                    AssetORM.isin == isin,
+                    AssetORM.owner_user_id.is_not_distinct_from(row.owner_user_id),
+                )
+            ).scalars().first()
+            if existing is None:  # isin is unique per scope — don't collide with another asset
                 row.isin = isin
                 self.session.flush()
 
@@ -251,9 +273,20 @@ class SqlAssetRepo(AssetRepo):
 
     def search_local(self, query: str, limit: int = 20) -> list[Asset]:
         pattern = f"%{query}%"
+        # Own private assets, plus shared assets this user actually holds or has
+        # traded. Never "every shared asset": that would let a user enumerate
+        # what other users hold (docs/saas/02 §4.4). RLS already limits holdings
+        # and transactions to the caller, so the EXISTS clauses see only theirs.
+        held = or_(
+            exists().where(HoldingORM.asset_id == AssetORM.id),
+            exists().where(TransactionORM.asset_id == AssetORM.id),
+        )
         rows = self.session.execute(
             select(AssetORM)
-            .where((AssetORM.symbol.ilike(pattern)) | (AssetORM.name.ilike(pattern)))
+            .where(
+                (AssetORM.symbol.ilike(pattern)) | (AssetORM.name.ilike(pattern)),
+                or_(AssetORM.owner_user_id.is_not(None), held),
+            )
             .limit(limit)
         ).scalars()
         return [_asset_from_orm(r) for r in rows]
@@ -269,15 +302,23 @@ class SqlAssetRepo(AssetRepo):
 
         if symbol != row.symbol:
             conflict = self.session.execute(
-                select(AssetORM).where(AssetORM.symbol == symbol, AssetORM.id != asset_id)
-            ).scalar_one_or_none()
+                select(AssetORM).where(
+                    AssetORM.symbol == symbol,
+                    AssetORM.id != asset_id,
+                    AssetORM.owner_user_id.is_not_distinct_from(row.owner_user_id),
+                )
+            ).scalars().first()
             if conflict is not None:
                 raise AssetConflictError(f"Another asset already uses symbol {symbol!r}")
 
         if isin and isin != row.isin:
             conflict = self.session.execute(
-                select(AssetORM).where(AssetORM.isin == isin, AssetORM.id != asset_id)
-            ).scalar_one_or_none()
+                select(AssetORM).where(
+                    AssetORM.isin == isin,
+                    AssetORM.id != asset_id,
+                    AssetORM.owner_user_id.is_not_distinct_from(row.owner_user_id),
+                )
+            ).scalars().first()
             if conflict is not None:
                 raise AssetConflictError(f"Another asset already uses ISIN {isin!r}")
 
@@ -354,6 +395,81 @@ class SqlAssetRepo(AssetRepo):
             row.share_class_figi = share_class_figi
         if name is not None:
             row.name = name
+        self.session.flush()
+
+    # --- private vs shared assets (ADR 0005, migration 0011) -----------------
+
+    def get_owner(self, asset_id: int) -> uuid.UUID | None:
+        return self.session.execute(
+            select(AssetORM.owner_user_id).where(AssetORM.id == asset_id)
+        ).scalar_one_or_none()
+
+    def promote_to_shared(self, asset_id: int) -> None:
+        """Verified private -> shared. Needs system mode (RLS refuses otherwise)."""
+        row = self.session.get(AssetORM, asset_id)
+        if row is not None and row.owner_user_id is not None:
+            row.owner_user_id = None
+            self.session.flush()
+
+    def find_shared_by_identifier(self, scheme: IdentifierScheme, value: str) -> Asset | None:
+        ident = self.session.execute(
+            select(AssetIdentifierORM).where(
+                AssetIdentifierORM.scheme == scheme.value, AssetIdentifierORM.value == value
+            )
+        ).scalar_one_or_none()
+        if ident is None or ident.asset.owner_user_id is not None:
+            return None
+        return _asset_from_orm(ident.asset)
+
+    def merge_into(self, source_id: int, target_id: int) -> None:
+        """Move the CURRENT identity's holdings/transactions/quant runs from the
+        private asset to the shared twin, drop its derived per-asset snapshots,
+        then delete the private asset. Must run with the owner's identity set
+        (those tables are row-level secured) and in system mode (deleting the
+        stub asset's dependents)."""
+        source = self.session.get(AssetORM, source_id)
+        target = self.session.get(AssetORM, target_id)
+        if source is None or target is None:
+            raise AssetNotFoundError("asset to merge not found")
+        if source.owner_user_id is None or target.owner_user_id is not None:
+            raise AssetConflictError("merge needs a private source and a shared target")
+
+        # The rows being repointed belong to the stub's owner and are row-level
+        # secured, so act AS the owner for the rest of this transaction, then
+        # restore whatever identity the caller had.
+        previous = self.session.execute(
+            text("SELECT coalesce(current_setting('app.user_id', true), '')")
+        ).scalar_one()
+        self.session.execute(
+            text("SELECT set_config('app.user_id', :u, true)"), {"u": str(source.owner_user_id)}
+        )
+        try:
+            clash = self.session.execute(
+                text(
+                    "SELECT 1 FROM holdings a JOIN holdings b ON a.account_id = b.account_id "
+                    "WHERE a.asset_id = :s AND b.asset_id = :t LIMIT 1"
+                ),
+                {"s": source_id, "t": target_id},
+            ).first()
+            if clash:
+                raise AssetConflictError(
+                    "this account already holds the shared asset too — merge by hand"
+                )
+
+            params = {"s": source_id, "t": target_id}
+            for stmt in (
+                "UPDATE holdings SET asset_id = :t WHERE asset_id = :s",
+                "UPDATE transactions SET asset_id = :t WHERE asset_id = :s",
+                "UPDATE quant_runs SET asset_id = :t WHERE asset_id = :s",
+                # derived data: rebuilt by the next snapshot run
+                "DELETE FROM position_snapshots WHERE asset_id = :s",
+            ):
+                self.session.execute(text(stmt), params)
+        finally:
+            self.session.execute(
+                text("SELECT set_config('app.user_id', :u, true)"), {"u": previous}
+            )
+        self.session.delete(source)
         self.session.flush()
 
 

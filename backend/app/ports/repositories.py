@@ -4,6 +4,7 @@ layer explosion at this app's size. Implementations: adapters/persistence/reposi
 
 from __future__ import annotations
 
+import uuid
 from abc import ABC, abstractmethod
 from datetime import date, datetime
 from decimal import Decimal
@@ -46,7 +47,10 @@ class AssetRepo(ABC):
         exchange: str | None = None,
         isin: str | None = None,
         needs_mapping: bool = False,
-    ) -> Asset: ...
+        shared: bool = False,
+    ) -> Asset:
+        """Private to the calling user unless `shared` (provider-verified
+        catalogue entries only; see ADR 0005)."""
 
     @abstractmethod
     def add_identifier(self, asset_id: int, scheme: IdentifierScheme, value: str) -> None: ...
@@ -121,6 +125,28 @@ class AssetRepo(ABC):
         display name (e.g. an ISIN or a broker's internal code) with Yahoo's
         own readable name for the listing — see domain.listings.resolved_display_name,
         which callers use to decide when that's actually an improvement."""
+
+    # --- private vs shared assets (ADR 0005, migration 0011) -----------------
+    # Concrete no-op defaults so simple in-memory fakes need not care about
+    # ownership; the SQL repo implements the real behaviour.
+
+    def get_owner(self, asset_id: int) -> uuid.UUID | None:
+        """The User a private asset belongs to, or None when it is shared."""
+        return None
+
+    def promote_to_shared(self, asset_id: int) -> None:
+        """Make a verified private asset shared (owner -> NULL). System mode only."""
+        return
+
+    def find_shared_by_identifier(self, scheme: IdentifierScheme, value: str) -> Asset | None:
+        """The shared (owner-less) asset carrying this identifier, if any."""
+        return None
+
+    def merge_into(self, source_id: int, target_id: int) -> None:
+        """Repoint the CURRENT identity's rows from private `source_id` to shared
+        `target_id`, then delete the source. Raises AssetConflictError when the
+        holder already has `target_id` in the same account."""
+        raise NotImplementedError
 
 
 class PortfolioRepo(ABC):

@@ -29,7 +29,7 @@ from ai.common.agent_loop import AgentRunResult, run_agent
 from ai.common.llm import build_chat_client
 from ai.common.mcp_client import open_mcp_servers
 from ai.common.tool_rag.retriever import ToolRetriever
-from app.adapters.persistence.session import SessionLocal
+from app.adapters.persistence.session import user_session
 from app.config import settings
 from app.container import chat_repo, resolution_repo
 from app.domain.listings import AgentRunRecord
@@ -180,7 +180,7 @@ class PortfolioAssistantAgent:
         param docstring for why: replaying a stale tool result risks
         answering from outdated portfolio data. The model re-calls a tool
         if it needs a current number."""
-        db = SessionLocal()
+        db = user_session()
         try:
             messages = chat_repo(db).list_messages(session_id, limit=MAX_HISTORY_MESSAGES)
             return [{"role": m.role, "content": m.content} for m in messages]
@@ -190,7 +190,7 @@ class PortfolioAssistantAgent:
     def _persist_turn(
         self, session_id: int, user_message: str, result: AgentRunResult, is_first_turn: bool
     ) -> None:
-        db = SessionLocal()
+        db = user_session()
         try:
             repo = chat_repo(db)
             repo.add_message(session_id, "user", user_message)
@@ -215,7 +215,7 @@ class PortfolioAssistantAgent:
         the same way import_reviewer's runs aren't). `tool_retrieval` is
         this turn's retrieval trace (plans/tool_rag.md section 5) — None
         whenever TOOL_RAG_ENABLED is false."""
-        db = SessionLocal()
+        db = user_session()
         try:
             resolution_repo(db).add_agent_run(
                 AgentRunRecord(

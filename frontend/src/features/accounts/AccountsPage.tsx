@@ -7,6 +7,7 @@ import { Card, CardBody, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Input, Select } from '../../components/ui/Input'
 import { TBody, TD, TH, THead, TR, Table } from '../../components/ui/Table'
 import { endpoints } from '../../lib/api/endpoints'
+import { useMe } from '../../lib/auth'
 import {
   useAcceptResolutionCandidate,
   useAccounts,
@@ -37,14 +38,15 @@ export function AccountsPage() {
   const syncStatus = useSyncStatus()
   const syncBroker = useSyncBroker()
   const importFlex = useImportFlexHistory()
+  const me = useMe()
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Accounts" />
+      <PageHeader title="Brokerage accounts" />
 
       <Card>
         <CardHeader>
-          <CardTitle>Connected accounts</CardTitle>
+          <CardTitle>Your brokerage accounts</CardTitle>
         </CardHeader>
         {accounts.data && accounts.data.length > 0 ? (
           <Table>
@@ -107,10 +109,11 @@ export function AccountsPage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <AddAccountCard />
-        <AssetMappingCard />
+        <AssetMappingCard isOperator={me.is_operator} />
       </div>
 
-      <ResolutionsCard />
+      {/* Resolution review is shared Reference-data administration: Operator only. */}
+      {me.is_operator && <ResolutionsCard />}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <AddHoldingCard accountIds={accounts.data?.map((a) => a.id) ?? []} />
@@ -135,7 +138,7 @@ function AddAccountCard() {
       </CardHeader>
       <CardBody className="space-y-2">
         <Input placeholder="Broker key (e.g. myinvestor)" value={brokerKey} onChange={(e) => setBrokerKey(e.target.value)} />
-        <Input placeholder="Account name" value={name} onChange={(e) => setName(e.target.value)} />
+        <Input placeholder="Brokerage account name" value={name} onChange={(e) => setName(e.target.value)} />
         <Input placeholder="Currency" value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} />
         <Button
           variant="primary"
@@ -149,7 +152,7 @@ function AddAccountCard() {
   )
 }
 
-function AssetMappingCard() {
+function AssetMappingCard({ isOperator }: { isOperator: boolean }) {
   const unmapped = useUnmappedAssets()
 
   return (
@@ -161,10 +164,31 @@ function AssetMappingCard() {
         {!unmapped.data || unmapped.data.length === 0 ? (
           <p className="text-sm text-muted">Nothing to map — every asset has a market-data ticker.</p>
         ) : (
-          unmapped.data.map((asset) => <AssetMappingRow key={asset.id} assetId={asset.id} symbol={asset.symbol} />)
+          unmapped.data.map((asset) =>
+            isOperator ? (
+              <AssetMappingRow key={asset.id} assetId={asset.id} symbol={asset.symbol} />
+            ) : (
+              <AssetVerifyRow key={asset.id} assetId={asset.id} symbol={asset.symbol} />
+            ),
+          )
         )}
       </CardBody>
     </Card>
+  )
+}
+
+/** A user's own unverified asset: they can ask the resolver to verify it (it is
+ * checked against OpenFIGI/market data and, if confirmed, shared); picking an
+ * arbitrary ticker by hand is an Operator action. */
+function AssetVerifyRow({ assetId, symbol }: { assetId: number; symbol: string }) {
+  const resolve = useResolveAssetNow()
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-lg border border-border p-2.5">
+      <div className="text-sm font-medium text-text">{symbol}</div>
+      <Button disabled={resolve.isPending} onClick={() => resolve.mutate(assetId)}>
+        {resolve.isPending ? 'Checking…' : 'Verify automatically'}
+      </Button>
+    </div>
   )
 }
 

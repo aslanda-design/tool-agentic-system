@@ -26,7 +26,7 @@ from typing import Any
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from app.adapters.persistence.session import current_user_id
+from app.adapters.persistence.session import current_user_id, system_mode
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
@@ -43,9 +43,12 @@ def _server_params(module: str) -> StdioServerParameters:
     # row-level security return nothing).
     env = dict(os.environ)
     env.pop("APP_USER_ID", None)
+    env.pop("APP_SYSTEM", None)
     uid = current_user_id.get()
     if uid:
         env["APP_USER_ID"] = uid
+    if system_mode.get():  # only a system-scope parent can mint a system child
+        env["APP_SYSTEM"] = "1"
     return StdioServerParameters(
         command=sys.executable, args=["-m", module], cwd=str(BACKEND_DIR), env=env
     )

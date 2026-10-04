@@ -34,7 +34,7 @@ from app.domain.listings import (
     ResolutionStatus,
     resolved_display_name,
 )
-from app.domain.models import AssetClass
+from app.domain.models import AssetClass, IdentifierScheme
 from app.ports.market_data import MarketDataPort
 from app.ports.repositories import AssetRepo, PortfolioRepo, ResolutionRepo
 from app.ports.security_master import SecurityMasterPort
@@ -200,6 +200,7 @@ class ResolveSecurityUseCase:
         status, chosen, note = decide(candidates, self.agent_enabled)
 
         decided_by = None
+        merge_target: int | None = None
         if chosen is not None:
             try:
                 self.asset_repo.apply_listing(
@@ -213,7 +214,15 @@ class ResolveSecurityUseCase:
                 )
                 decided_by = "rules"
             except AssetConflictError as exc:
-                status, chosen, note = ResolutionStatus.NEEDS_REVIEW, None, str(exc)
+                # The listing already belongs to another asset. If that is the
+                # shared (verified) asset and this one is a private stub, they
+                # are the same security: fold the stub into the shared one.
+                merge_target = self._shared_twin(asset_id, chosen.symbol)
+                if merge_target is not None:
+                    decided_by = "rules"
+                    note = f"merged into shared asset {merge_target}"
+                else:
+                    status, chosen, note = ResolutionStatus.NEEDS_REVIEW, None, str(exc)
 
         self.resolution_repo.supersede_open(asset_id)
         resolution_id = self.resolution_repo.create(
@@ -221,7 +230,44 @@ class ResolveSecurityUseCase:
         )
         if chosen is not None:
             self.resolution_repo.select_candidate(resolution_id, chosen.id)
-        return self.resolution_repo.get(resolution_id)
+        # Fetch BEFORE finalizing: a merge deletes the private stub, and its
+        # resolution rows cascade away with it.
+        resolution = self.resolution_repo.get(resolution_id)
+        if not self._finalize_ownership(asset_id, resolution_id, merge_target, decided_by):
+            resolution = self.resolution_repo.get(resolution_id)  # downgraded: re-read
+        return resolution
+
+    # --- private -> shared (ADR 0005) ----------------------------------
+
+    def _shared_twin(self, asset_id: int, yahoo_symbol: str) -> int | None:
+        """The shared asset already carrying `yahoo_symbol`, when `asset_id` is a
+        private stub that should fold into it; None otherwise."""
+        if self.asset_repo.get_owner(asset_id) is None:
+            return None
+        twin = self.asset_repo.find_shared_by_identifier(IdentifierScheme.YFINANCE, yahoo_symbol)
+        return twin.id if twin is not None and twin.id != asset_id else None
+
+    def _finalize_ownership(
+        self, asset_id: int, resolution_id: int, merge_target: int | None, decided_by: str | None
+    ) -> bool:
+        """After a verified decision, a private stub stops being private: merged
+        into its shared twin, or promoted in place. A merge that cannot be done
+        safely (the holder already has the shared asset in the same account)
+        downgrades the resolution to NEEDS_REVIEW instead of failing. Returns
+        False only when it downgraded (the caller must re-read the resolution)."""
+        if decided_by is None:
+            return True
+        if merge_target is not None:
+            try:
+                self.asset_repo.merge_into(asset_id, merge_target)
+            except AssetConflictError as exc:
+                self.resolution_repo.set_status(
+                    resolution_id, ResolutionStatus.NEEDS_REVIEW, None, str(exc)
+                )
+                return False
+        else:
+            self.asset_repo.promote_to_shared(asset_id)
+        return True
 
     def add_candidate(self, resolution_id: int, symbol: str, source: str = "user") -> Candidate:
         """Validate and score a symbol an agent or user found (e.g. via the
@@ -275,15 +321,21 @@ class ResolveSecurityUseCase:
             raise DomainError(f"{candidate.symbol!r} has no currency — can't be accepted")
 
         asset_class = AssetClass(candidate.asset_class) if candidate.asset_class else None
-        self.asset_repo.apply_listing(
-            resolution.asset_id,
-            candidate.symbol,
-            candidate.info.currency,
-            candidate.mic,
-            asset_class,
-            None,
-            name=resolved_display_name(candidate.info, candidate.symbol),
-        )
+        merge_target: int | None = None
+        try:
+            self.asset_repo.apply_listing(
+                resolution.asset_id,
+                candidate.symbol,
+                candidate.info.currency,
+                candidate.mic,
+                asset_class,
+                None,
+                name=resolved_display_name(candidate.info, candidate.symbol),
+            )
+        except AssetConflictError:
+            merge_target = self._shared_twin(resolution.asset_id, candidate.symbol)
+            if merge_target is None:
+                raise
         self.resolution_repo.select_candidate(resolution_id, candidate_id)
         status = (
             ResolutionStatus.RESOLVED_BY_AGENT
@@ -291,7 +343,12 @@ class ResolveSecurityUseCase:
             else ResolutionStatus.RESOLVED_BY_USER
         )
         self.resolution_repo.set_status(resolution_id, status, decided_by, note)
-        return self.resolution_repo.get(resolution_id)
+        result = self.resolution_repo.get(resolution_id)
+        if merge_target is not None:
+            self.asset_repo.merge_into(resolution.asset_id, merge_target)  # conflict -> 409
+        else:
+            self.asset_repo.promote_to_shared(resolution.asset_id)
+        return result
 
     def flag_for_review(
         self, resolution_id: int, note: str, flagged_by: str | None = None

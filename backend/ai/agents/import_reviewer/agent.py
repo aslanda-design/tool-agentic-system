@@ -19,7 +19,7 @@ from pathlib import Path
 from ai.common.agent_loop import AgentRunResult, run_agent
 from ai.common.llm import build_chat_client
 from ai.common.mcp_client import open_mcp_servers
-from app.adapters.persistence.session import SessionLocal
+from app.adapters.persistence.session import user_session
 from app.config import settings
 from app.container import note_repo, resolution_repo
 from app.domain.listings import AgentRunRecord
@@ -135,7 +135,7 @@ class ImportReviewerAgent:
             )
 
     def _save_fallback_note(self, account_id: int, result: AgentRunResult) -> None:
-        db = SessionLocal()
+        db = user_session()
         try:
             note_repo(db).add(
                 agent=AGENT_NAME,
@@ -151,7 +151,7 @@ class ImportReviewerAgent:
             db.close()
 
     def _record_run(self, result: AgentRunResult) -> None:
-        db = SessionLocal()
+        db = user_session()
         try:
             resolution_repo(db).add_agent_run(
                 AgentRunRecord(

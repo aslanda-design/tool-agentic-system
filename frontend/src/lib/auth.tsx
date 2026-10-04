@@ -8,6 +8,7 @@ export interface Me {
   id: string
   email: string
   auth_mode: 'dev' | 'oidc'
+  is_operator: boolean
 }
 
 const MeContext = createContext<Me | null>(null)

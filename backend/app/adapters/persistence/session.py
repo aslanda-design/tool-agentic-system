@@ -44,6 +44,13 @@ current_user_id: ContextVar[str | None] = ContextVar("current_user_id", default=
 # be changed by a tool argument — the model has no way to name another user.
 _PROCESS_USER_ID: str | None = os.environ.get("APP_USER_ID") or None
 
+# "System mode" lets work write SHARED Reference data (verified assets). Only
+# trusted server-side code enters it: the resolver job, Operator routes, the
+# security MCP server (spawned with APP_SYSTEM by a system-scope parent). A
+# user's request never has it. Like identity, it is applied per transaction.
+system_mode: ContextVar[bool] = ContextVar("system_mode", default=False)
+_PROCESS_SYSTEM: bool = os.environ.get("APP_SYSTEM") == "1"
+
 
 @event.listens_for(SessionLocal, "after_begin")
 def _apply_identity(session, transaction, connection) -> None:
@@ -53,6 +60,8 @@ def _apply_identity(session, transaction, connection) -> None:
     uid = session.info.get("user_id") or current_user_id.get() or _PROCESS_USER_ID
     if uid:
         connection.execute(text("SELECT set_config('app.user_id', :u, true)"), {"u": uid})
+    if session.info.get("system") or system_mode.get() or _PROCESS_SYSTEM:
+        connection.execute(text("SELECT set_config('app.system', '1', true)"))
 
 
 @contextmanager
@@ -76,12 +85,49 @@ def raw_db() -> Generator[Session, None, None]:
         db.close()
 
 
-def scoped_session(user_id: uuid.UUID | str) -> Session:
-    """A session bound to `user_id` regardless of thread/context. The
-    caller owns closing it. Used by `app.api.deps.get_db` and by agents."""
+@contextmanager
+def system_scope() -> Iterator[None]:
+    """Run trusted server-side work that may write shared Reference data."""
+    token = system_mode.set(True)
+    try:
+        yield
+    finally:
+        system_mode.reset(token)
+
+
+@contextmanager
+def system_flag(db: Session) -> Iterator[None]:
+    """Briefly enable system mode inside the CURRENT transaction (a narrow
+    escape for e.g. creating one provider-verified shared asset during a
+    user's request). It does not survive a commit, by design."""
+    db.execute(text("SELECT set_config('app.system', '1', true)"))
+    try:
+        yield
+    finally:
+        db.execute(text("SELECT set_config('app.system', '', true)"))
+
+
+def scoped_session(user_id: uuid.UUID | str | None = None, *, system: bool = False) -> Session:
+    """A session bound to `user_id` (and/or system mode) regardless of
+    thread/context. The caller owns closing it."""
     db = SessionLocal()
-    db.info["user_id"] = str(user_id)
+    if user_id is not None:
+        db.info["user_id"] = str(user_id)
+    if system:
+        db.info["system"] = True
     return db
+
+
+def user_session() -> Session:
+    """A session for the CURRENT identity scope; refuses to run without one.
+
+    Agents use this instead of a bare SessionLocal(): forgetting to scope an
+    agent run then fails loudly rather than silently reading nothing (or, worse,
+    being refactored one day into reading everything)."""
+    uid = current_user_id.get() or _PROCESS_USER_ID
+    if not uid:
+        raise RuntimeError("No tenant identity in scope — wrap the call in user_scope(...)")
+    return scoped_session(uid)
 
 
 def list_active_user_ids() -> list[uuid.UUID]:

@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom'
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: '◧' },
   { to: '/search', label: 'Search', icon: '⌕' },
-  { to: '/accounts', label: 'Accounts', icon: '▤' },
+  { to: '/accounts', label: 'Brokerage accounts', icon: '▤' },
   { to: '/assistant', label: 'Assistant', icon: '◎' },
   { to: '/quant', label: 'Quant Lab', icon: '∿' },
 ]

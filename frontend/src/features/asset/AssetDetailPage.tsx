@@ -111,7 +111,7 @@ export function AssetDetailPage() {
             <p className="text-sm text-muted">No intraday data available for this asset right now.</p>
           ) : (
             <p className="text-sm text-muted">
-              No price history yet — this asset may need a market-data ticker mapped (see Accounts page).
+              No price history yet — this asset may need a market-data ticker mapped (see Brokerage accounts page).
             </p>
           )}
         </CardBody>
@@ -124,7 +124,7 @@ export function AssetDetailPage() {
           </CardHeader>
           {a.position.market_value == null && (
             <CardBody className="pt-0 text-sm text-muted">
-              No market price yet — map this asset to a ticker on the Accounts page to see value and P&amp;L.
+              No market price yet — map this asset to a ticker on the Brokerage accounts page to see value and P&amp;L.
             </CardBody>
           )}
           <CardBody className="grid grid-cols-2 gap-4 sm:grid-cols-4">

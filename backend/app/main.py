@@ -56,7 +56,8 @@ scheduler = build_scheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    _run_migrations()
+    if settings.run_migrations_on_start:
+        _run_migrations()
     _configure_logging()
     if settings.auth_mode == "dev" and settings.app_env != "dev":
         raise RuntimeError("auth_mode='dev' (no login) is only allowed when app_env='dev'")
@@ -68,7 +69,8 @@ async def lifespan(app: FastAPI):
         if settings.app_env != "dev" and not settings.app_base_url.startswith("https://"):
             raise RuntimeError("APP_BASE_URL must be https outside dev")
     check_rls_enforced()
-    gap_fill_snapshots_on_startup()
+    if settings.run_scheduler_in_api:
+        gap_fill_snapshots_on_startup()
     # Deliberately NOT running the security resolver here, unlike the
     # snapshot gap-fill above: the resolver makes real outbound OpenFIGI/
     # Yahoo calls and can permanently change a real asset's mapping — doing
@@ -78,9 +80,11 @@ async def lifespan(app: FastAPI):
     # instead via the scheduled interval job and right after an import/sync
     # actually adds new assets (see adapters/scheduler.py's run_resolver_job
     # and its BackgroundTasks callers in api/routes/imports.py and sync.py).
-    scheduler.start()
+    if settings.run_scheduler_in_api:
+        scheduler.start()
     yield
-    scheduler.shutdown(wait=False)
+    if settings.run_scheduler_in_api:
+        scheduler.shutdown(wait=False)
 
 
 app = FastAPI(title="Investment Tracker", version="0.1.0", lifespan=lifespan)
