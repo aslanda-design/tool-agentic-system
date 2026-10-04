@@ -19,6 +19,23 @@ class Settings(BaseSettings):
     # app_env=dev. "oidc": real login via an OIDC provider (Phase 1b).
     auth_mode: str = "dev"
 
+    # --- OIDC login (auth_mode="oidc"; docs/saas/03) ---
+    # Any standards-compliant provider works; local dev uses the free,
+    # self-hosted Keycloak in docker-compose.yml (`--profile auth`).
+    oidc_issuer: str = "http://localhost:8080/realms/investment-tracker"
+    oidc_client_id: str = "investment-tracker"
+    oidc_client_secret: str = ""
+    # Must be reachable by the BROWSER and registered at the provider. Same
+    # origin as the frontend so the session cookie is first-party.
+    oidc_redirect_uri: str = "http://localhost:5173/api/auth/callback"
+    # Where to send the browser after login/logout.
+    app_base_url: str = "http://localhost:5173"
+    # HMAC key for the short-lived pre-login cookie (state/nonce/PKCE).
+    # REQUIRED outside dev; generate with `python -c "import secrets;print(secrets.token_urlsafe(48))"`.
+    session_secret: str = ""
+    session_idle_days: int = 14
+    session_absolute_days: int = 30
+
     base_currency: str = "EUR"
 
     # --- Interactive Brokers: TWS/IB Gateway (paper account by default, port 7497) ---

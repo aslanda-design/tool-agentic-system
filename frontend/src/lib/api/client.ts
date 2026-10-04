@@ -2,6 +2,12 @@
 // proxies to the backend (see vite.config.ts); in the Docker/nginx build
 // nginx proxies the same path — see frontend/nginx.conf.
 
+export class UnauthenticatedError extends Error {
+  constructor() {
+    super("Not authenticated")
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // FormData bodies (file uploads) must NOT get an explicit Content-Type —
   // fetch sets multipart/form-data with the correct boundary itself only
@@ -10,9 +16,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // backend sees no multipart parts at all and 422s with "file: Field required".
   const isFormData = init?.body instanceof FormData
   const res = await fetch(`/api${path}`, {
-    headers: init?.body && !isFormData ? { 'Content-Type': 'application/json' } : undefined,
+    // Custom header = CSRF defence for cookie sessions (backend/app/api/deps.py):
+    // a cross-site form or image request cannot set it.
+    headers: {
+      'X-Requested-With': 'fetch',
+      ...(init?.body && !isFormData ? { 'Content-Type': 'application/json' } : {}),
+    },
+    credentials: 'same-origin',
     ...init,
   })
+  if (res.status === 401) throw new UnauthenticatedError()
   if (!res.ok) {
     const body = await res.json().catch(() => null)
     throw new Error(body?.detail || `${path} failed: ${res.status}`)

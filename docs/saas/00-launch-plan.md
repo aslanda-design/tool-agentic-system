@@ -117,7 +117,9 @@ Done and verified (582 tests green, including 20 in `backend/tests/tenancy/`):
 - Scheduler jobs run per user; MCP subprocess identity fixed at spawn (`APP_USER_ID`, ADR 0007); startup refuses `auth_mode=dev` outside dev and refuses an RLS-bypassing DB role outside dev.
 - Mutation-checked: with RLS disabled on `accounts`, 7 tenancy tests fail.
 
-Still open in Phase 1: real login (self-hosted Keycloak OIDC + BFF session, free), `assets.owner_user_id` private custom assets (Q15), Operator-only resolver routes, rename Account to Brokerage Account, move scheduler out of the API process, user-scoped factory for the remaining direct `SessionLocal()` agent call sites (they currently rely on the route's `user_scope`).
+Login (added 2026-10-05, 610 backend tests + 12 frontend tests green): OIDC authorization-code + PKCE with a backend-for-frontend session (`app/adapters/auth/`, `app/api/routes/auth.py`, migration `0010`): opaque HttpOnly cookie, only its SHA-256 stored, idle + absolute expiry, log-out-everywhere, CSRF header, state/nonce/PKCE, ID-token validation (pinned algorithms, alg=none and HMAC-confusion tests), open-redirect-safe `next`. Free self-hosted Keycloak behind `docker compose --profile auth` with an imported dev realm. Frontend `AuthGate` + Sign out. **Not yet verified against a live Keycloak** (unit tests use a local RSA key and a fake provider; the real round trip needs ~700 MB RAM).
+
+Still open in Phase 1: `assets.owner_user_id` private custom assets (Q15), Operator-only resolver routes, rename Account to Brokerage Account, move scheduler out of the API process, user-scoped factory for the remaining direct `SessionLocal()` agent call sites (they currently rely on the route's `user_scope`).
 
 ### Phase 2 — Hardening, market data, deployment (≈4–5 wks)
 

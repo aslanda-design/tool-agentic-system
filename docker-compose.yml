@@ -36,6 +36,26 @@ services:
       db:
         condition: service_healthy
 
+  # Free, self-hosted OIDC login for local development (`docker compose
+  # --profile auth up -d keycloak`). Opt-in because Keycloak needs ~700 MB of
+  # RAM. DEV ONLY: plain http, bundled H2 database, a known client secret and
+  # a throwaway user (dev@example.com / dev-password) imported from
+  # auth/realm-investment-tracker.json. Production uses an EU-hosted provider
+  # or a hardened Keycloak (docs/saas/03).
+  keycloak:
+    profiles: ["auth"]
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: "8080"
+      JAVA_OPTS_APPEND: "-Xms256m -Xmx512m"
+    volumes:
+      - ./auth/realm-investment-tracker.json:/opt/keycloak/data/import/realm-investment-tracker.json:ro
+    ports:
+      - "8080:8080"
+
   backend:
     build: ./backend
     env_file:

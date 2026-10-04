@@ -12,6 +12,7 @@ from app.api.routes import (
     accounts,
     analytics,
     assets,
+    auth,
     chat,
     health,
     imports,
@@ -59,6 +60,13 @@ async def lifespan(app: FastAPI):
     _configure_logging()
     if settings.auth_mode == "dev" and settings.app_env != "dev":
         raise RuntimeError("auth_mode='dev' (no login) is only allowed when app_env='dev'")
+    if settings.auth_mode == "oidc":
+        if len(settings.session_secret) < 32:
+            raise RuntimeError("SESSION_SECRET must be set (>= 32 chars) when AUTH_MODE=oidc")
+        if not settings.oidc_client_secret:
+            raise RuntimeError("OIDC_CLIENT_SECRET must be set when AUTH_MODE=oidc")
+        if settings.app_env != "dev" and not settings.app_base_url.startswith("https://"):
+            raise RuntimeError("APP_BASE_URL must be https outside dev")
     check_rls_enforced()
     gap_fill_snapshots_on_startup()
     # Deliberately NOT running the security resolver here, unlike the
@@ -87,6 +95,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
+app.include_router(auth.router, prefix="/api")
 app.include_router(portfolio.router, prefix="/api")
 app.include_router(positions.router, prefix="/api")
 app.include_router(assets.router, prefix="/api")

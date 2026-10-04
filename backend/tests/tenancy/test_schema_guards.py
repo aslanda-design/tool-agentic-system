@@ -21,6 +21,11 @@ PRIVATE_TABLES = {
 }
 
 
+# `sessions` has a user_id but is deliberately NOT tenant-scoped: it is reachable
+# only through SECURITY DEFINER functions (login happens before any identity).
+SYSTEM_TABLES = {"sessions"}
+
+
 def test_runtime_role_is_subject_to_rls():
     with SessionLocal() as db:
         row = db.execute(
@@ -42,7 +47,7 @@ def test_every_table_with_user_id_has_forced_rls_and_a_policy():
                     JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'
                     JOIN pg_attribute a
                       ON a.attrelid = c.oid AND a.attname = 'user_id' AND NOT a.attisdropped
-                    WHERE c.relkind = 'r'
+                    WHERE c.relkind = 'r' AND c.relname <> 'sessions'
                       AND (NOT c.relrowsecurity
                            OR NOT c.relforcerowsecurity
                            OR NOT EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid))
@@ -66,7 +71,7 @@ def test_private_tables_match_the_documented_classification():
                 )
             ).scalars()
         )
-    assert have == PRIVATE_TABLES, f"user_id tables changed: {have ^ PRIVATE_TABLES}"
+    assert have - SYSTEM_TABLES == PRIVATE_TABLES, f"user_id tables changed: {have ^ PRIVATE_TABLES}"
 
 
 def test_user_id_is_not_nullable_except_for_system_agent_runs():
@@ -81,3 +86,14 @@ def test_user_id_is_not_nullable_except_for_system_agent_runs():
         )
     assert nullable == {"agent_runs"}
 
+
+def test_app_user_cannot_touch_sessions_directly():
+    with SessionLocal() as db:
+        privs = db.execute(
+            text(
+                "SELECT has_table_privilege('app_user','sessions','SELECT'),"
+                "       has_table_privilege('app_user','sessions','INSERT'),"
+                "       has_table_privilege('app_user','sessions','DELETE')"
+            )
+        ).one()
+    assert privs == (False, False, False)
