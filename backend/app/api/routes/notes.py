@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app import container
-from app.adapters.persistence.session import get_db
+from app.api.deps import get_db
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 

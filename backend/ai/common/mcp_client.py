@@ -26,6 +26,8 @@ from typing import Any
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from app.adapters.persistence.session import current_user_id
+
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 
@@ -33,8 +35,19 @@ def _server_params(module: str) -> StdioServerParameters:
     # env=dict(os.environ) is required — the SDK only forwards a minimal
     # environment to the subprocess by default, which would drop
     # DATABASE_URL/OPENFIGI_API_KEY/etc (see backend/ai/AGENTS.md rule 5).
+    #
+    # Tenant identity (ADR 0007): the subprocess's user is fixed HERE, by the
+    # trusted parent, from the caller's identity scope — never from a tool
+    # argument. An inherited APP_USER_ID is always dropped first so a child can
+    # only ever get the user of the scope that spawned it (or none, which makes
+    # row-level security return nothing).
+    env = dict(os.environ)
+    env.pop("APP_USER_ID", None)
+    uid = current_user_id.get()
+    if uid:
+        env["APP_USER_ID"] = uid
     return StdioServerParameters(
-        command=sys.executable, args=["-m", module], cwd=str(BACKEND_DIR), env=dict(os.environ)
+        command=sys.executable, args=["-m", module], cwd=str(BACKEND_DIR), env=env
     )
 
 

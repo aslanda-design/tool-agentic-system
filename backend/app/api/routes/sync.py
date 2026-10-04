@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import container
-from app.adapters.persistence.session import get_db
+from app.api.deps import get_db
 from app.domain.errors import BrokerConnectionError
 
 logger = logging.getLogger(__name__)

@@ -11,7 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import container
-from app.adapters.persistence.session import get_db
+from app.adapters.persistence.session import user_scope
+from app.api.deps import CurrentUser, get_current_user, get_db
 from app.api.schemas import ChatMessageRequest, CreateChatSessionRequest
 from app.config import settings
 
@@ -47,7 +48,12 @@ def delete_session(session_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/sessions/{session_id}/messages", status_code=201)
-def send_message(session_id: int, request: ChatMessageRequest, db: Session = Depends(get_db)):
+def send_message(
+    session_id: int,
+    request: ChatMessageRequest,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
     """Runs the portfolio_assistant agent synchronously — real LLM latency,
     up to `AGENT_TIMEOUT_SECONDS`. The agent itself persists both the
     user's message and its own reply (see
@@ -61,7 +67,13 @@ def send_message(session_id: int, request: ChatMessageRequest, db: Session = Dep
     if container.chat_repo(db).get_session(session_id) is None:
         raise HTTPException(status_code=404, detail="Chat session not found")
 
-    result = container.build_portfolio_assistant_agent().send_message(session_id, request.message)
+    # The agent opens its own DB sessions and spawns MCP subprocesses; both
+    # take the caller's identity from this scope (ADR 0007), never from the
+    # model's arguments.
+    with user_scope(user.id):
+        result = container.build_portfolio_assistant_agent().send_message(
+            session_id, request.message
+        )
     messages = container.chat_repo(db).list_messages(
         session_id, limit=2
     )  # the user + assistant rows just written

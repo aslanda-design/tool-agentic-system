@@ -4,7 +4,20 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+    # Runtime connection. In production this MUST be the non-owner, NOBYPASSRLS
+    # `app_user` role (migration 0009) — owners and superusers bypass row-level
+    # security, silently disabling tenant isolation. See docs/saas/02.
     database_url: str = "postgresql+psycopg://investment_tracker:investment_tracker@localhost:5432/investment_tracker"
+    # Alembic connects with this (the table owner) when set; falls back to
+    # database_url so single-URL local setups keep working.
+    migration_database_url: str = ""
+
+    # dev | staging | production. Gates dev-only conveniences (auth_mode="dev")
+    # and strictness of startup safety checks.
+    app_env: str = "dev"
+    # "dev": every request is the legacy dev user (NO LOGIN) — refused outside
+    # app_env=dev. "oidc": real login via an OIDC provider (Phase 1b).
+    auth_mode: str = "dev"
 
     base_currency: str = "EUR"
 

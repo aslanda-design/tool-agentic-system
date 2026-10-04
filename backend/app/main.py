@@ -6,6 +6,7 @@ from alembic.config import Config
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.adapters.persistence.session import check_rls_enforced
 from app.adapters.scheduler import build_scheduler, gap_fill_snapshots_on_startup
 from app.api.routes import (
     accounts,
@@ -24,6 +25,7 @@ from app.api.routes import (
     resolutions,
     sync,
 )
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +57,9 @@ scheduler = build_scheduler()
 async def lifespan(app: FastAPI):
     _run_migrations()
     _configure_logging()
+    if settings.auth_mode == "dev" and settings.app_env != "dev":
+        raise RuntimeError("auth_mode='dev' (no login) is only allowed when app_env='dev'")
+    check_rls_enforced()
     gap_fill_snapshots_on_startup()
     # Deliberately NOT running the security resolver here, unlike the
     # snapshot gap-fill above: the resolver makes real outbound OpenFIGI/

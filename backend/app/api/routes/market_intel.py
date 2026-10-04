@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import container
-from app.adapters.persistence.session import get_db
+from app.api.deps import get_db
 from app.config import settings
 
 router = APIRouter(prefix="/market-intel", tags=["market-intel"])

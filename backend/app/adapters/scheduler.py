@@ -15,7 +15,7 @@ from app import container
 from app.adapters.market_data.fx_adapter import YFinanceFxRates
 from app.adapters.market_data.yfinance_adapter import YFinanceMarketData
 from app.adapters.persistence.repositories import SqlAssetRepo, SqlMarketDataRepo, SqlPortfolioRepo
-from app.adapters.persistence.session import SessionLocal
+from app.adapters.persistence.session import SessionLocal, for_each_user
 from app.application.build_snapshots import BuildSnapshotsUseCase
 from app.application.refresh_market_data import RefreshMarketDataUseCase
 from app.config import settings
@@ -24,43 +24,41 @@ from app.domain.listings import ResolutionStatus
 logger = logging.getLogger(__name__)
 
 
+def _refresh_for_user(session) -> None:
+    use_case = RefreshMarketDataUseCase(
+        YFinanceMarketData(),
+        YFinanceFxRates(),
+        SqlMarketDataRepo(session),
+        SqlAssetRepo(session),
+        settings.base_currency,
+    )
+    result = use_case.refresh_all()
+    session.commit()
+    logger.info("Market data refresh: %s", result)
+
+
+def _snapshots_for_user(session) -> None:
+    use_case = BuildSnapshotsUseCase(
+        SqlPortfolioRepo(session),
+        SqlMarketDataRepo(session),
+        SqlAssetRepo(session),
+        settings.base_currency,
+    )
+    days = use_case.execute()
+    session.commit()
+    logger.info("Snapshot build: %s day(s) written", days)
+
+
 def _refresh_market_data_job() -> None:
-    session = SessionLocal()
-    try:
-        use_case = RefreshMarketDataUseCase(
-            YFinanceMarketData(),
-            YFinanceFxRates(),
-            SqlMarketDataRepo(session),
-            SqlAssetRepo(session),
-            settings.base_currency,
-        )
-        result = use_case.refresh_all()
-        session.commit()
-        logger.info("Market data refresh: %s", result)
-    except Exception:
-        session.rollback()
-        logger.exception("Market data refresh job failed")
-    finally:
-        session.close()
+    # Per user: "which assets are held" is Private data (RLS), so the scheduler
+    # visits each user in their own identity scope. Overlapping holdings are
+    # refreshed once per holder for now; deduplicating across users is a
+    # known optimisation (docs/saas/06 §5) once there are many users.
+    for_each_user(_refresh_for_user)
 
 
 def _build_snapshots_job() -> None:
-    session = SessionLocal()
-    try:
-        use_case = BuildSnapshotsUseCase(
-            SqlPortfolioRepo(session),
-            SqlMarketDataRepo(session),
-            SqlAssetRepo(session),
-            settings.base_currency,
-        )
-        days = use_case.execute()
-        session.commit()
-        logger.info("Snapshot build: %s day(s) written", days)
-    except Exception:
-        session.rollback()
-        logger.exception("Snapshot build job failed")
-    finally:
-        session.close()
+    for_each_user(_snapshots_for_user)
 
 
 def run_resolver_job() -> None:
@@ -110,15 +108,11 @@ def run_resolver_job() -> None:
         )
 
         if auto_accepted:
-            refresh_result = container.build_refresh_market_data_use_case(session).refresh_all()
-            session.commit()
-            snapshot_days = container.build_snapshots_use_case(session).execute()
-            session.commit()
-            logger.info(
-                "Post-resolver refresh: %s, %d snapshot day(s) rebuilt",
-                refresh_result,
-                snapshot_days,
-            )
+            # Resolutions are shared Reference data, but prices/snapshots are
+            # per user — refresh each user's view of the newly priced asset.
+            for_each_user(_refresh_for_user)
+            for_each_user(_snapshots_for_user)
+            logger.info("Post-resolver refresh done for all users")
     except Exception:
         session.rollback()
         logger.exception("Security resolver job failed")
@@ -126,29 +120,26 @@ def run_resolver_job() -> None:
         session.close()
 
 
+def _gap_fill_for_user(session) -> None:
+    from datetime import timedelta
+
+    use_case = BuildSnapshotsUseCase(
+        SqlPortfolioRepo(session),
+        SqlMarketDataRepo(session),
+        SqlAssetRepo(session),
+        settings.base_currency,
+    )
+    last = SqlPortfolioRepo(session).last_snapshot_date()
+    from_date = last + timedelta(days=1) if last else None
+    days = use_case.execute(from_date=from_date)
+    session.commit()
+    logger.info("Startup snapshot gap-fill: %s day(s) written", days)
+
+
 def gap_fill_snapshots_on_startup() -> None:
     """Runs once at boot: the app is usually off, so this catches history up
-    to today before anyone loads the dashboard."""
-    session = SessionLocal()
-    try:
-        use_case = BuildSnapshotsUseCase(
-            SqlPortfolioRepo(session),
-            SqlMarketDataRepo(session),
-            SqlAssetRepo(session),
-            settings.base_currency,
-        )
-        last = SqlPortfolioRepo(session).last_snapshot_date()
-        from datetime import timedelta
-
-        from_date = last + timedelta(days=1) if last else None
-        days = use_case.execute(from_date=from_date)
-        session.commit()
-        logger.info("Startup snapshot gap-fill: %s day(s) written", days)
-    except Exception:
-        session.rollback()
-        logger.exception("Startup snapshot gap-fill failed")
-    finally:
-        session.close()
+    to today before anyone loads the dashboard — for every user."""
+    for_each_user(_gap_fill_for_user)
 
 
 def build_scheduler() -> BackgroundScheduler:

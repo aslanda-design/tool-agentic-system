@@ -7,6 +7,7 @@ Alembic (backend/migrations) — see database/AGENTS.md for the full model.
 
 from __future__ import annotations
 
+import uuid
 from datetime import date, datetime
 
 from pgvector.sqlalchemy import Vector
@@ -22,6 +23,8 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    Uuid,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -34,6 +37,38 @@ FX_RATE = Numeric(20, 10)
 
 class Base(DeclarativeBase):
     pass
+
+
+class UserORM(Base):
+    """A login identity — the unit of tenancy (CONTEXT.md: User). Written only
+    through the SECURITY DEFINER function `auth_upsert_user` (migration 0009);
+    row-level security shows a user only their own row."""
+
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    idp_subject: Mapped[str] = mapped_column(Text, unique=True)
+    email: Mapped[str] = mapped_column(Text, default="")
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    plan: Mapped[str] = mapped_column(Text, default="free")
+    ai_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OwnedByUser:
+    """Marks a Private-data table (CONTEXT.md). `user_id` is never set by
+    application code: the database fills it from the transaction's identity
+    (`app_current_user_id()` default) and row-level security's WITH CHECK
+    rejects any other value. Mass-assignment of another user's id is
+    therefore impossible, not merely unlikely."""
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        server_default=text("app_current_user_id()"),
+        index=True,
+    )
 
 
 class AssetORM(Base):
@@ -75,7 +110,7 @@ class AssetIdentifierORM(Base):
     __table_args__ = (Index("ix_asset_identifiers_asset_id", "asset_id"),)
 
 
-class AccountORM(Base):
+class AccountORM(OwnedByUser, Base):
     __tablename__ = "accounts"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -85,10 +120,10 @@ class AccountORM(Base):
     currency: Mapped[str] = mapped_column(String(3))
     source: Mapped[str] = mapped_column(String(10))  # api | manual
 
-    __table_args__ = (UniqueConstraint("broker_key", "external_id"),)
+    __table_args__ = (UniqueConstraint("user_id", "broker_key", "external_id"),)
 
 
-class HoldingORM(Base):
+class HoldingORM(OwnedByUser, Base):
     __tablename__ = "holdings"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -103,7 +138,7 @@ class HoldingORM(Base):
     __table_args__ = (UniqueConstraint("account_id", "asset_id"),)
 
 
-class TransactionORM(Base):
+class TransactionORM(OwnedByUser, Base):
     __tablename__ = "transactions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -127,7 +162,7 @@ class TransactionORM(Base):
     )
 
 
-class CashBalanceORM(Base):
+class CashBalanceORM(OwnedByUser, Base):
     __tablename__ = "cash_balances"
 
     account_id: Mapped[int] = mapped_column(
@@ -176,7 +211,7 @@ class FxRateORM(Base):
     rate: Mapped[float] = mapped_column(FX_RATE)
 
 
-class PositionSnapshotORM(Base):
+class PositionSnapshotORM(OwnedByUser, Base):
     __tablename__ = "position_snapshots"
 
     date: Mapped[date] = mapped_column(Date, primary_key=True)
@@ -189,7 +224,7 @@ class PositionSnapshotORM(Base):
     cost_basis_base: Mapped[float] = mapped_column(MONEY)
 
 
-class PortfolioSnapshotORM(Base):
+class PortfolioSnapshotORM(OwnedByUser, Base):
     __tablename__ = "portfolio_snapshots"
 
     date: Mapped[date] = mapped_column(Date, primary_key=True)
@@ -266,6 +301,15 @@ class ResolutionCandidateORM(Base):
 class AgentRunORM(Base):
     __tablename__ = "agent_runs"
 
+    # NULL = a system run (security_resolver on shared Reference data).
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        server_default=text("app_current_user_id()"),
+        nullable=True,
+        index=True,
+    )
+
     id: Mapped[int] = mapped_column(primary_key=True)
     resolution_id: Mapped[int | None] = mapped_column(
         ForeignKey("asset_resolutions.id", ondelete="SET NULL"), nullable=True
@@ -286,7 +330,7 @@ class AgentRunORM(Base):
     tool_retrieval: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
 
-class AiNoteORM(Base):
+class AiNoteORM(OwnedByUser, Base):
     """A short Markdown note an agent wrote — see
     plans/agentic_asset_mapping_phase7_8.md Phase 8c. Append-only: the only
     mutation an existing row ever gets is `dismissed_at` being set."""
@@ -307,7 +351,7 @@ class AiNoteORM(Base):
     __table_args__ = (Index("ix_ai_notes_created_at", "created_at"),)
 
 
-class ChatSessionORM(Base):
+class ChatSessionORM(OwnedByUser, Base):
     """One conversation thread with portfolio_assistant — see
     plans/agentic_asset_mapping_phase7_8.md Phase 8f. `updated_at` (not
     `created_at`) is what the history sidebar sorts by."""
@@ -326,7 +370,7 @@ class ChatSessionORM(Base):
     __table_args__ = (Index("ix_chat_sessions_updated_at", "updated_at"),)
 
 
-class ChatMessageORM(Base):
+class ChatMessageORM(OwnedByUser, Base):
     __tablename__ = "chat_messages"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -341,7 +385,7 @@ class ChatMessageORM(Base):
     __table_args__ = (Index("ix_chat_messages_session_id", "session_id"),)
 
 
-class QuantRunORM(Base):
+class QuantRunORM(OwnedByUser, Base):
     """One Monte Carlo run from the Quant Lab (see plans/quant_lab.md).
     Deliberately stores only the RUN'S RECIPE (asset/model/split/params/
     seed) plus a percentile summary — never the raw n_paths x horizon_days

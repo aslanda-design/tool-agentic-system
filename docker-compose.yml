@@ -41,7 +41,11 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-investment_tracker}:${POSTGRES_PASSWORD:-investment_tracker}@db:5432/${POSTGRES_DB:-investment_tracker}
+      # Runtime connects as the non-owner `app_user` so row-level security is
+      # enforced (docs/saas/02); only Alembic uses the owner account.
+      DATABASE_URL: postgresql+psycopg://app_user:${APP_DB_PASSWORD:-app_user_dev}@db:5432/${POSTGRES_DB:-investment_tracker}
+      MIGRATION_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-investment_tracker}:${POSTGRES_PASSWORD:-investment_tracker}@db:5432/${POSTGRES_DB:-investment_tracker}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-app_user_dev}
       IBKR_HOST: host.docker.internal
     ports:
       - "8000:8000"

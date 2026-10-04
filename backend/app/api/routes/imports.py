@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 from app import container
 from app.adapters.brokers.statement_files.generic import parse_generic_csv
 from app.adapters.brokers.statement_files.myinvestor import parse_myinvestor_file
-from app.adapters.persistence.session import get_db
+from app.adapters.persistence.session import user_scope
+from app.api.deps import CurrentUser, get_current_user, get_db
 from app.config import settings
 from app.domain.errors import StatementParseError
 
@@ -54,6 +55,7 @@ async def commit_import(
     format: str = "generic",
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
 ):
     statement = _parse(await file.read(), format)
     if statement.unmapped_columns:
@@ -99,5 +101,6 @@ async def commit_import(
     # — `.run()`'s internal `asyncio.run()` would raise "cannot be called
     # from a running event loop" here (a real bug this avoids).
     if settings.agent_enabled:
-        await container.build_import_reviewer_agent().arun(account_id)
+        with user_scope(user.id):
+            await container.build_import_reviewer_agent().arun(account_id)
     return result

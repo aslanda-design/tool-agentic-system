@@ -109,6 +109,16 @@ Goal: two real users on a local stack cannot see each other's data; proven by te
 
 Exit: tenancy suite green in CI; manual two-browser smoke test; no `SessionLocal()` use outside the sanctioned factory (lint rule).
 
+#### Phase 1 progress (updated 2026-10-04)
+
+Done and verified (582 tests green, including 20 in `backend/tests/tenancy/`):
+- Migration `0009`: `users`, `app_current_user_id()`, `user_id` + forced RLS on all 11 Private tables, per-user uniqueness, composite FKs, `app_user` runtime role, SECURITY DEFINER login/list helpers.
+- `session.py` identity layer (per-transaction `set_config`, survives mid-request commit); `app/api/deps.py` (`get_current_user`, user-scoped `get_db`); all routes authenticated by construction (CI test).
+- Scheduler jobs run per user; MCP subprocess identity fixed at spawn (`APP_USER_ID`, ADR 0007); startup refuses `auth_mode=dev` outside dev and refuses an RLS-bypassing DB role outside dev.
+- Mutation-checked: with RLS disabled on `accounts`, 7 tenancy tests fail.
+
+Still open in Phase 1: real login (self-hosted Keycloak OIDC + BFF session, free), `assets.owner_user_id` private custom assets (Q15), Operator-only resolver routes, rename Account to Brokerage Account, move scheduler out of the API process, user-scoped factory for the remaining direct `SessionLocal()` agent call sites (they currently rely on the route's `user_scope`).
+
 ### Phase 2 — Hardening, market data, deployment (≈4–5 wks)
 
 - **2a Market-data swap:** introduce `MarketDataPort` implementation for the chosen vendor + ECB FX adapter; `MARKET_DATA_PROVIDER` config with a startup assertion that `yfinance` is refused when `APP_ENV=production`. Disable Finnhub/StockTwits unless licensed. Keep SEC EDGAR (public domain, fair-access rules).
