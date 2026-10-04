@@ -26,12 +26,21 @@ def upgrade() -> None:
     op.create_table(
         "ai_notes",
         sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("agent", sa.String(length=40), nullable=False),  # 'import_reviewer' | 'weekly_report'
+        sa.Column(
+            "agent", sa.String(length=40), nullable=False
+        ),  # 'import_reviewer' | 'weekly_report'
         sa.Column("scope", sa.String(length=20), nullable=False),  # 'account' | 'portfolio'
-        sa.Column("account_id", sa.Integer(), sa.ForeignKey("accounts.id", ondelete="CASCADE"), nullable=True),
+        sa.Column(
+            "account_id",
+            sa.Integer(),
+            sa.ForeignKey("accounts.id", ondelete="CASCADE"),
+            nullable=True,
+        ),
         sa.Column("title", sa.String(length=200), nullable=False),
         sa.Column("body", sa.Text(), nullable=False),  # Markdown
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
         sa.Column("dismissed_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id"),
     )

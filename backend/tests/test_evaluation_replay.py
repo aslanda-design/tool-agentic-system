@@ -26,7 +26,11 @@ def _load(name: str) -> dict:
 def test_every_case_file_has_the_required_shape(path: Path):
     case = json.loads(path.read_text(encoding="utf-8"))
     assert case["id"] == path.stem
-    assert "resolution" in case and "candidates" in case["resolution"] and "context" in case["resolution"]
+    assert (
+        "resolution" in case
+        and "candidates" in case["resolution"]
+        and "context" in case["resolution"]
+    )
     assert case["expected"]["final_tool"] in ("save_security_mapping", "flag_for_review")
     if case["expected"]["final_tool"] == "save_security_mapping":
         assert case["expected"]["symbol"], f"{path.name}: save cases must set expected.symbol"
@@ -59,7 +63,9 @@ def test_unknown_tool_name_returns_an_error():
 def test_add_candidate_rescopes_with_the_real_scorer():
     session = ReplaySession(_load("missing_candidate_via_search.json"))
 
-    result = asyncio.run(session.call_tool("add_candidate", {"resolution_id": 9003, "symbol": "IBE.MC"}))
+    result = asyncio.run(
+        session.call_tool("add_candidate", {"resolution_id": 9003, "symbol": "IBE.MC"})
+    )
 
     assert result["symbol"] == "IBE.MC"
     assert result["score"] > 0
@@ -70,7 +76,9 @@ def test_add_candidate_rescopes_with_the_real_scorer():
 def test_add_candidate_rejects_a_duplicate_symbol():
     session = ReplaySession(_load("currency_decides_lse_vs_xetra.json"))
 
-    result = asyncio.run(session.call_tool("add_candidate", {"resolution_id": 9001, "symbol": "VUSA.L"}))
+    result = asyncio.run(
+        session.call_tool("add_candidate", {"resolution_id": 9001, "symbol": "VUSA.L"})
+    )
 
     assert "error" in result
 
@@ -79,7 +87,9 @@ def test_save_security_mapping_rejects_a_stale_candidate():
     session = ReplaySession(_load("all_candidates_stale_must_flag.json"))
 
     result = asyncio.run(
-        session.call_tool("save_security_mapping", {"resolution_id": 9004, "candidate_id": 702, "reason": "x"})
+        session.call_tool(
+            "save_security_mapping", {"resolution_id": 9004, "candidate_id": 702, "reason": "x"}
+        )
     )
 
     assert "error" in result
@@ -90,7 +100,10 @@ def test_save_security_mapping_accepts_a_valid_candidate_and_records_the_outcome
     session = ReplaySession(_load("currency_decides_lse_vs_xetra.json"))
 
     result = asyncio.run(
-        session.call_tool("save_security_mapping", {"resolution_id": 9001, "candidate_id": 501, "reason": "same currency"})
+        session.call_tool(
+            "save_security_mapping",
+            {"resolution_id": 9001, "candidate_id": 501, "reason": "same currency"},
+        )
     )
 
     assert "error" not in result
@@ -102,7 +115,9 @@ def test_save_security_mapping_accepts_a_valid_candidate_and_records_the_outcome
 def test_flag_for_review_records_the_outcome():
     session = ReplaySession(_load("all_candidates_stale_must_flag.json"))
 
-    result = asyncio.run(session.call_tool("flag_for_review", {"resolution_id": 9004, "reason": "all stale"}))
+    result = asyncio.run(
+        session.call_tool("flag_for_review", {"resolution_id": 9004, "reason": "all stale"})
+    )
 
     assert "error" not in result
     assert session.outcome.final_tool == "flag_for_review"

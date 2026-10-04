@@ -41,7 +41,10 @@ class RetrieveToolsUseCase:
 
         query_embedding = self.embedding_port.embed([query])[0]
         dense = self.repo.dense_search(
-            query_embedding, self.embedding_port.model_name, all_tools_in_ceiling, CANDIDATES_PER_STAGE
+            query_embedding,
+            self.embedding_port.model_name,
+            all_tools_in_ceiling,
+            CANDIDATES_PER_STAGE,
         )
         lexical = self.repo.lexical_search(query, all_tools_in_ceiling, CANDIDATES_PER_STAGE)
         fused = reciprocal_rank_fusion([dense, lexical])

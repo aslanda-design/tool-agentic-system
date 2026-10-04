@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from app.domain.errors import DomainError
 from app.domain.models import AccountSource, Transaction, TransactionType
@@ -37,12 +37,14 @@ def _fill_holdings_gaps_from_transactions(portfolio_repo: PortfolioRepo, account
     a good broker-derived number with a possibly-partial computed one would
     be a regression, not a fix.
     """
-    txns = [t for t in portfolio_repo.list_transactions(account_id=account_id) if t.asset_id is not None]
+    txns = [
+        t for t in portfolio_repo.list_transactions(account_id=account_id) if t.asset_id is not None
+    ]
     by_asset: dict[int, list[Transaction]] = defaultdict(list)
     for t in txns:
         by_asset[t.asset_id].append(t)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for asset_id, asset_txns in by_asset.items():
         if portfolio_repo.get_holding(account_id, asset_id) is not None:
             continue
@@ -51,7 +53,13 @@ def _fill_holdings_gaps_from_transactions(portfolio_repo: PortfolioRepo, account
             continue
         currency = asset_txns[-1].currency
         portfolio_repo.upsert_holding(
-            account_id, asset_id, state.quantity, state.avg_cost_price, currency, now, AccountSource.MANUAL
+            account_id,
+            asset_id,
+            state.quantity,
+            state.avg_cost_price,
+            currency,
+            now,
+            AccountSource.MANUAL,
         )
 
 
@@ -89,13 +97,21 @@ class ParsedStatement:
     column_mapping: dict[str, str]  # field -> the header that won, for the fields we could map
     unmapped_columns: list[str]  # required fields we couldn't map — non-empty means rows is []
     notices: list[str]  # file-level information, e.g. "no type column — every row treated as BUY"
-    skipped_count: int = 0  # rows deliberately excluded (rejected orders, out-of-scope cash movements)
+    skipped_count: int = (
+        0  # rows deliberately excluded (rejected orders, out-of-scope cash movements)
+    )
 
 
 class ImportStatementUseCase:
     """IBKR Flex Web Service: full history for one account."""
 
-    def __init__(self, statement_port: StatementPort, account_id: int, asset_repo: AssetRepo, portfolio_repo: PortfolioRepo) -> None:
+    def __init__(
+        self,
+        statement_port: StatementPort,
+        account_id: int,
+        asset_repo: AssetRepo,
+        portfolio_repo: PortfolioRepo,
+    ) -> None:
         self.statement_port = statement_port
         self.account_id = account_id
         self.asset_repo = asset_repo
@@ -108,7 +124,13 @@ class ImportStatementUseCase:
             asset_id = None
             if t.symbol:
                 asset = resolve_asset(
-                    self.asset_repo, t.symbol, t.name or t.symbol, t.currency, t.ibkr_conid, t.isin, t.exchange
+                    self.asset_repo,
+                    t.symbol,
+                    t.name or t.symbol,
+                    t.currency,
+                    t.ibkr_conid,
+                    t.isin,
+                    t.exchange,
                 )
                 asset_id = asset.id
             transactions.append(
@@ -149,10 +171,14 @@ class CsvImportUseCase:
         self.asset_repo = asset_repo
         self.portfolio_repo = portfolio_repo
 
-    def _prepare(self, statement: ParsedStatement, account_id: int) -> tuple[list[ParsedRow], set[str]]:
+    def _prepare(
+        self, statement: ParsedStatement, account_id: int
+    ) -> tuple[list[ParsedRow], set[str]]:
         assign_external_ids(statement.rows)
         existing_external_ids = {
-            t.external_id for t in self.portfolio_repo.list_transactions(account_id=account_id) if t.external_id
+            t.external_id
+            for t in self.portfolio_repo.list_transactions(account_id=account_id)
+            if t.external_id
         }
         return statement.rows, existing_external_ids
 
@@ -212,13 +238,21 @@ class CsvImportUseCase:
             if row.errors:
                 continue
             if row.external_id is None:
-                raise DomainError(f"import row {row.row_number} has no external_id — dedup would be unsafe")
+                raise DomainError(
+                    f"import row {row.row_number} has no external_id — dedup would be unsafe"
+                )
             if row.external_id in existing_external_ids:
                 continue
             asset_id = None
             if row.symbol:
                 asset = resolve_asset(
-                    self.asset_repo, row.symbol, row.name or row.symbol, row.currency, None, row.isin, row.exchange
+                    self.asset_repo,
+                    row.symbol,
+                    row.name or row.symbol,
+                    row.currency,
+                    None,
+                    row.isin,
+                    row.exchange,
                 )
                 asset_id = asset.id
             executed_at = date.fromisoformat(row.executed_at[:10])

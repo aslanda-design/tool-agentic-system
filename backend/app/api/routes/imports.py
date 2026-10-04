@@ -24,9 +24,13 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 def _parse(file_bytes: bytes, format: str):
     parser = PARSERS.get(format)
     if parser is None:
-        raise HTTPException(status_code=400, detail=f"Unknown format: {format!r}. Available: {list(PARSERS)}")
+        raise HTTPException(
+            status_code=400, detail=f"Unknown format: {format!r}. Available: {list(PARSERS)}"
+        )
     if len(file_bytes) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail=f"File too large (max {MAX_UPLOAD_BYTES // (1024 * 1024)} MB).")
+        raise HTTPException(
+            status_code=413, detail=f"File too large (max {MAX_UPLOAD_BYTES // (1024 * 1024)} MB)."
+        )
     try:
         return parser(file_bytes)
     except StatementParseError as exc:
@@ -35,7 +39,10 @@ def _parse(file_bytes: bytes, format: str):
 
 @router.post("/preview")
 async def preview_import(
-    account_id: int, format: str = "generic", file: UploadFile = File(...), db: Session = Depends(get_db)
+    account_id: int,
+    format: str = "generic",
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
 ):
     statement = _parse(await file.read(), format)
     return container.build_csv_import_use_case(db).preview(statement, account_id)
@@ -43,7 +50,10 @@ async def preview_import(
 
 @router.post("/commit")
 async def commit_import(
-    account_id: int, format: str = "generic", file: UploadFile = File(...), db: Session = Depends(get_db)
+    account_id: int,
+    format: str = "generic",
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
 ):
     statement = _parse(await file.read(), format)
     if statement.unmapped_columns:
@@ -58,7 +68,11 @@ async def commit_import(
         result = container.build_csv_import_use_case(db).commit(statement, account_id)
     except Exception:
         db.rollback()
-        logger.exception("Import commit for account_id=%s (format=%s) raised an unexpected error", account_id, format)
+        logger.exception(
+            "Import commit for account_id=%s (format=%s) raised an unexpected error",
+            account_id,
+            format,
+        )
         raise
     db.commit()
     container.build_snapshots_use_case(db).execute()

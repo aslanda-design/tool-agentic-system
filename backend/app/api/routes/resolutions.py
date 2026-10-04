@@ -4,7 +4,7 @@
 the rest of that resource; everything about an existing resolution lives here."""
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -51,8 +51,10 @@ def list_recent_resolutions(
     """Resolutions decided in the last `days` days — a spot-check view of
     what the resolver has actually done. `decided_by` is a comma list (e.g.
     `?decided_by=rules,agent` to see automated decisions but not manual ones)."""
-    since = datetime.now(timezone.utc) - timedelta(days=days)
-    decided_by_list = [v.strip() for v in decided_by.split(",") if v.strip()] if decided_by else None
+    since = datetime.now(UTC) - timedelta(days=days)
+    decided_by_list = (
+        [v.strip() for v in decided_by.split(",") if v.strip()] if decided_by else None
+    )
     return container.resolution_repo(db).list_recent(since, decided_by_list, limit)
 
 
@@ -65,7 +67,9 @@ def get_resolution(resolution_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{resolution_id}/accept")
-def accept_resolution_candidate(resolution_id: int, request: AcceptCandidateRequest, db: Session = Depends(get_db)):
+def accept_resolution_candidate(
+    resolution_id: int, request: AcceptCandidateRequest, db: Session = Depends(get_db)
+):
     """Apply one of the resolution's candidates as the asset's pricing
     listing. Refreshes market data and rebuilds snapshots right away rather
     than making the user wait for the next scheduled refresh — same
@@ -89,7 +93,9 @@ def accept_resolution_candidate(resolution_id: int, request: AcceptCandidateRequ
 
 
 @router.post("/{resolution_id}/candidates")
-def add_resolution_candidate(resolution_id: int, request: AddCandidateRequest, db: Session = Depends(get_db)):
+def add_resolution_candidate(
+    resolution_id: int, request: AddCandidateRequest, db: Session = Depends(get_db)
+):
     """Validate and score a symbol the user typed in — adds it as a
     candidate on the resolution (see accept() to actually apply one)."""
     try:
@@ -107,7 +113,9 @@ def add_resolution_candidate(resolution_id: int, request: AddCandidateRequest, d
 
 
 @router.post("/{resolution_id}/flag-for-review")
-def flag_resolution_for_review(resolution_id: int, request: FlagForReviewRequest, db: Session = Depends(get_db)):
+def flag_resolution_for_review(
+    resolution_id: int, request: FlagForReviewRequest, db: Session = Depends(get_db)
+):
     try:
         result = container.build_resolve_security_use_case(db).flag_for_review(
             resolution_id, request.note, flagged_by="user"
@@ -133,7 +141,9 @@ def request_agent_resolution(resolution_id: int, db: Session = Depends(get_db)):
     leaves the resolution in a terminal-for-now state (RESOLVED_BY_AGENT
     or NEEDS_REVIEW), never stuck — see SecurityResolverAgent's fallback."""
     if not settings.agent_enabled:
-        raise HTTPException(status_code=409, detail="The resolution agent is not enabled (AGENT_ENABLED=false).")
+        raise HTTPException(
+            status_code=409, detail="The resolution agent is not enabled (AGENT_ENABLED=false)."
+        )
     resolution = container.resolution_repo(db).get(resolution_id)
     if resolution is None:
         raise HTTPException(status_code=404, detail="Resolution not found")

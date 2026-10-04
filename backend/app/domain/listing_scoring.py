@@ -101,7 +101,9 @@ def _most_liquid(candidate: Candidate, gated: list[Candidate]) -> bool:
     return candidate.info.avg_volume >= max(same_currency_volumes)
 
 
-def score_candidates(ctx: ResolutionContext, candidates: list[Candidate], today: date | None = None) -> None:
+def score_candidates(
+    ctx: ResolutionContext, candidates: list[Candidate], today: date | None = None
+) -> None:
     """Scores every candidate in place (fills `.features` and `.score`).
     `has_recent_price` is a GATE, not a scored feature: a candidate that
     fails it can never be chosen by decide(), regardless of how high the
@@ -113,10 +115,15 @@ def score_candidates(ctx: ResolutionContext, candidates: list[Candidate], today:
     # (which only looks at "gated" candidates), so this is two passes.
     for candidate in candidates:
         info = candidate.info
-        days_since_trade = (today - info.last_trade_date).days if info and info.last_trade_date else None
+        days_since_trade = (
+            (today - info.last_trade_date).days if info and info.last_trade_date else None
+        )
         candidate.features["days_since_trade"] = days_since_trade
         candidate.features["has_recent_price"] = (
-            info is not None and info.currency is not None and days_since_trade is not None and days_since_trade <= STALE_AFTER_DAYS
+            info is not None
+            and info.currency is not None
+            and days_since_trade is not None
+            and days_since_trade <= STALE_AFTER_DAYS
         )
 
     gated = [c for c in candidates if c.features["has_recent_price"]]
@@ -128,8 +135,11 @@ def score_candidates(ctx: ResolutionContext, candidates: list[Candidate], today:
         symbol_match = _symbol_match(ctx, candidate)
         name_similarity_value = (
             1.0
-            if not ctx.broker_name or ctx.broker_name.upper() in {ctx.broker_symbol.upper(), (ctx.isin or "").upper()}
-            else _name_similarity(ctx.broker_name, candidate.info.name if candidate.info else candidate.symbol)
+            if not ctx.broker_name
+            or ctx.broker_name.upper() in {ctx.broker_symbol.upper(), (ctx.isin or "").upper()}
+            else _name_similarity(
+                ctx.broker_name, candidate.info.name if candidate.info else candidate.symbol
+            )
         )
         most_liquid = _most_liquid(candidate, gated)
 
@@ -163,11 +173,17 @@ def score_candidates(ctx: ResolutionContext, candidates: list[Candidate], today:
         candidate.score = score
 
 
-def decide(candidates: list[Candidate], agent_enabled: bool) -> tuple[ResolutionStatus, Candidate | None, str]:
+def decide(
+    candidates: list[Candidate], agent_enabled: bool
+) -> tuple[ResolutionStatus, Candidate | None, str]:
     """Which status this resolution should have, and which candidate (if
     any) to apply. Assumes score_candidates() has already run — reads
     `.features["has_recent_price"]` and `.score`, doesn't compute them."""
-    gated = sorted((c for c in candidates if c.features.get("has_recent_price")), key=lambda c: c.score, reverse=True)
+    gated = sorted(
+        (c for c in candidates if c.features.get("has_recent_price")),
+        key=lambda c: c.score,
+        reverse=True,
+    )
     if not gated:
         return ResolutionStatus.NEEDS_REVIEW, None, "no candidate with recent prices"
 
@@ -179,6 +195,18 @@ def decide(candidates: list[Candidate], agent_enabled: bool) -> tuple[Resolution
         return ResolutionStatus.AUTO_ACCEPTED, top, ""
     if top.score >= AGENT_MIN_SCORE:
         if agent_enabled:
-            return ResolutionStatus.NEEDS_AGENT, None, f"top candidate {top.symbol!r} scored {top.score} — ambiguous, needs review"
-        return ResolutionStatus.NEEDS_REVIEW, None, f"top candidate {top.symbol!r} scored {top.score} — ambiguous, needs review"
-    return ResolutionStatus.NEEDS_REVIEW, None, f"top candidate {top.symbol!r} only scored {top.score}"
+            return (
+                ResolutionStatus.NEEDS_AGENT,
+                None,
+                f"top candidate {top.symbol!r} scored {top.score} — ambiguous, needs review",
+            )
+        return (
+            ResolutionStatus.NEEDS_REVIEW,
+            None,
+            f"top candidate {top.symbol!r} scored {top.score} — ambiguous, needs review",
+        )
+    return (
+        ResolutionStatus.NEEDS_REVIEW,
+        None,
+        f"top candidate {top.symbol!r} only scored {top.score}",
+    )

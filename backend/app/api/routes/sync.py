@@ -62,7 +62,9 @@ def import_flex_history(account_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception:
         db.rollback()
-        logger.exception("Flex history import for account_id=%s raised an unexpected error", account_id)
+        logger.exception(
+            "Flex history import for account_id=%s raised an unexpected error", account_id
+        )
         raise
 
     db.commit()

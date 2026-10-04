@@ -5,7 +5,7 @@ callers (application/query_analytics.py) are tested separately."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from app.domain.analytics import (
@@ -121,9 +121,18 @@ def test_max_drawdown_sorts_out_of_order_history_by_date():
 
 def _txn(id_, type_, price, trade_date=date(2026, 9, 1), asset_id=1) -> Transaction:
     return Transaction(
-        id=id_, account_id=1, asset_id=asset_id, type=type_, quantity=D(1), price=price, fees=D(0),
-        currency="EUR", executed_at=datetime(2026, 9, 1, tzinfo=timezone.utc), trade_date=trade_date,
-        external_id=None, source=AccountSource.MANUAL,
+        id=id_,
+        account_id=1,
+        asset_id=asset_id,
+        type=type_,
+        quantity=D(1),
+        price=price,
+        fees=D(0),
+        currency="EUR",
+        executed_at=datetime(2026, 9, 1, tzinfo=UTC),
+        trade_date=trade_date,
+        external_id=None,
+        source=AccountSource.MANUAL,
     )
 
 
@@ -160,6 +169,11 @@ def test_flag_mispriced_trades_skips_when_no_market_price_is_known():
 
 def test_flag_mispriced_trades_custom_threshold():
     txns = [_txn(1, TransactionType.BUY, D(105))]  # +5%
-    assert flag_mispriced_trades(txns, _symbol_lookup, lambda aid, d: D(100), threshold=D("0.10")) == []
-    flagged = flag_mispriced_trades(txns, _symbol_lookup, lambda aid, d: D(100), threshold=D("0.01"))
+    assert (
+        flag_mispriced_trades(txns, _symbol_lookup, lambda aid, d: D(100), threshold=D("0.10"))
+        == []
+    )
+    flagged = flag_mispriced_trades(
+        txns, _symbol_lookup, lambda aid, d: D(100), threshold=D("0.01")
+    )
     assert len(flagged) == 1

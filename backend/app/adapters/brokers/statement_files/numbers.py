@@ -83,7 +83,10 @@ _DATE_PATTERNS = (
     (re.compile(r"^(\d{4})-(\d{2})-(\d{2})"), lambda m: (m.group(1), m.group(2), m.group(3))),
     (re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})$"), lambda m: (m.group(3), m.group(2), m.group(1))),
     (re.compile(r"^(\d{1,2})-(\d{1,2})-(\d{4})$"), lambda m: (m.group(3), m.group(2), m.group(1))),
-    (re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{2})$"), lambda m: (_pivot_year(m.group(3)), m.group(2), m.group(1))),
+    (
+        re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{2})$"),
+        lambda m: (_pivot_year(m.group(3)), m.group(2), m.group(1)),
+    ),
 )
 
 

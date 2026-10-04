@@ -28,12 +28,21 @@ app/
       registry.py            MODEL_REGISTRY + register()/get()/list_models()
       dates.py                next_trading_days() — shared by every model's simulate()
       annualization.py        log_returns()/annualized_mean_and_std()/annualized_variance() —
-                               shared by the two SDE-based models (black_scholes_gbm, heston)
+                               shared by the SDE-based models (black_scholes_gbm, heston,
+                               rough_heston, hawkes_jump_diffusion's diffusive part)
       bootstrap.py            simulate_by_residual_bootstrap() — the shared Monte Carlo
                                engine linear_regression/time_series_ar reuse
+      hawkes.py                fit_hawkes_mle() + Ogata's-thinning simulation for the
+                               self-exciting jump-timing component (hawkes_jump_diffusion)
+      roughness.py             estimate_hurst() — the Hurst exponent H, fit from an
+                               asset's own history (rough_heston)
+      rough_kernel.py          fit_kernel_quadrature() — approximates rough_heston's
+                               fractional kernel as a small multi-factor Markovian system
+      confidence.py            shared percentile/confidence-band helpers for SimulationResult
       recommendation.py       recommend_model() — deterministic, non-LLM heuristics
       models/                 linear_regression.py, time_series_ar.py, black_scholes_gbm.py,
-                               heston.py — one file per model
+                               heston.py, rough_heston.py, hawkes_jump_diffusion.py —
+                               one file per model
 
   ports/              Interfaces the domain/application layer depends on
     broker.py            BrokerPort — live account state from a broker's API
@@ -395,12 +404,14 @@ importing every model module in `domain/quant/models/__init__.py` — same
 shape as `container.BROKER_ADAPTERS`, no auto-discovery magic) around one
 shared interface (`types.py::QuantModel` — `calibrate(closes, params)` then
 `simulate(last_price, as_of, calibration, horizon_days, n_paths, seed,
-params)`). Five models are built: `linear_regression` (OLS on lagged
+params)`). Six models are built: `linear_regression` (OLS on lagged
 returns/rolling vol/mean), `time_series_ar` (AR(p) via statsmodels'
 `AutoReg`), `black_scholes_gbm` (Geometric Brownian Motion), `heston`
-(stochastic volatility), and `hawkes_jump_diffusion` (GBM plus a
-Hawkes-clustered jump component) — see `plans/quant_lab_phase7_8.md` for
-the full mathematical derivation of GBM/Heston and
+(stochastic volatility), `rough_heston` (stochastic volatility with a
+fractional, long-memory kernel instead of Heston's Markovian one), and
+`hawkes_jump_diffusion` (GBM plus a Hawkes-clustered jump component) — see
+`plans/quant_lab_phase7_8.md` for the full mathematical derivation of
+GBM/Heston, `plans/quant_lab_phase9_rough_heston.md` for rough Heston, and
 `plans/quant_lab_phase10_hawkes.md` for Hawkes, including worked examples
 and why they're worth understanding, not just running. **Every model produces
 a Monte Carlo path ensemble, never a point forecast**, but via one of two
@@ -411,13 +422,17 @@ genuinely different engines depending on the model family:
   `simulate_by_residual_bootstrap()` — the model's own one-step forecast
   rolled forward, resampling a shock from its in-sample residuals at each
   step.
-- `black_scholes_gbm`/`heston`/`hawkes_jump_diffusion` (family
-  `"stochastic_process"`) step their own continuous-time process instead
-  and never touch `bootstrap.py`. GBM has an *exact* closed-form solution
-  (no discretization at all — one fully vectorized numpy call generates
-  every path); Heston has no closed form and is discretized with the
-  full-truncation Euler scheme (see `plans/quant_lab_phase7_8.md` section
-  3.4), vectorized across paths but looped over days. `hawkes_jump_diffusion`
+- `black_scholes_gbm`/`heston`/`rough_heston`/`hawkes_jump_diffusion`
+  (family `"stochastic_process"`) step their own continuous-time process
+  instead and never touch `bootstrap.py`. GBM has an *exact* closed-form
+  solution (no discretization at all — one fully vectorized numpy call
+  generates every path); Heston has no closed form and is discretized with
+  the full-truncation Euler scheme (see `plans/quant_lab_phase7_8.md`
+  section 3.4), vectorized across paths but looped over days. `rough_heston`
+  extends that same Euler scheme across a small multi-factor Markovian
+  approximation of its fractional kernel (`rough_kernel.py`) rather than
+  needing true fractional calculus at simulation time — see
+  `plans/quant_lab_phase9_rough_heston.md` section 6. `hawkes_jump_diffusion`
   overlays a Hawkes-clustered jump component (simulated exactly via Ogata's
   thinning algorithm — `domain/quant/hawkes.py`) onto GBM's own closed-form
   diffusion; the jump part is inherently sequential/path-specific so it's
@@ -480,13 +495,22 @@ itself; that stays a UI-only action. Widening this later is a small,
 isolated change (one new tool, one line in `SERVERS`) once there's real
 usage to justify it.
 
-The one harder model still not built — rough Heston — is designed in
-`plans/quant_lab.md` section 9.3; it has no maintained free Python library
-and needs an options-implied-vol data source this app doesn't have to
-calibrate meaningfully. Hawkes jump-diffusion (`plans/quant_lab.md` section
-9.4's original design, superseded by the fuller
-`plans/quant_lab_phase10_hawkes.md`) is now built as `hawkes_jump_diffusion`
-— see that plan for the full derivation. The honest limitation stated
+Rough Heston — the hardest of the originally-unbuilt models
+(`plans/quant_lab.md` section 9.3) — is now built as `rough_heston`; see
+`plans/quant_lab_phase9_rough_heston.md` for the full derivation. Its
+long-memory kernel is approximated by a small multi-factor Markovian
+system fit by quadrature (`rough_kernel.py`), so simulation stays a
+standard Euler step, no fractional calculus at runtime, and `H` (the
+roughness/Hurst exponent) is genuinely estimated from the asset's own
+history (`roughness.py`) with a `fallback_default` path when there isn't
+enough of it — same honesty pattern as Hawkes's `MIN_EVENTS_FOR_MLE`
+below. `κ`/`ξ`/`ρ` stay manual sliders for the same reason as plain
+Heston's (below): they need an options-implied-volatility surface this
+app has no data source for, and roughness doesn't change that. Hawkes
+jump-diffusion (`plans/quant_lab.md` section 9.4's original design,
+superseded by the fuller `plans/quant_lab_phase10_hawkes.md`) is built as
+`hawkes_jump_diffusion` — see that plan for the full derivation. The
+honest limitation stated
 there, not glossed over: this app only has daily closes, not the
 tick-by-tick event data Hawkes is usually fit on, so "jump day" detection
 (a return beyond `k` standard deviations) is itself an approximation, and
@@ -632,7 +656,7 @@ evaluate a model offline first — see
 `ai/agents/security_resolver/evaluation/README.md`.
 
 Quant Lab (`plans/quant_lab.md`, optional): `pip install -e ".[ai,quant]"`
-for `numpy`/`statsmodels`/`scipy` — the five models built so far work with
+for `numpy`/`statsmodels`/`scipy` — the six models built so far work with
 no further setup. `TWELVE_DATA_API_KEY` (`.env`) is optional too: without
 it, an asset with too little yfinance history to calibrate just reports
 "not enough history" instead of backfilling. Try it at `/quant` in the

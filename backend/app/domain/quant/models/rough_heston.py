@@ -68,7 +68,9 @@ DEFAULT_XI = 0.3
 DEFAULT_RHO = -0.6
 
 DEFAULT_N_FACTORS = 20  # the multi-factor lift's accuracy/speed dial — section 6.4
-REFERENCE_HORIZON_YEARS = 1.0  # for calibrate()'s indicative kernel-fit diagnostic only — section 6.3
+REFERENCE_HORIZON_YEARS = (
+    1.0  # for calibrate()'s indicative kernel-fit diagnostic only — section 6.3
+)
 
 METADATA = ModelMetadata(
     key="rough_heston",
@@ -182,7 +184,9 @@ class RoughHestonModel:
         # horizon_days (section 6.3); this exists so the Calibration card
         # has something concrete to show before a horizon is even chosen.
         reference_quad = fit_kernel_quadrature(
-            hurst.h, dt=1.0 / TRADING_DAYS_PER_YEAR, horizon_years=REFERENCE_HORIZON_YEARS,
+            hurst.h,
+            dt=1.0 / TRADING_DAYS_PER_YEAR,
+            horizon_years=REFERENCE_HORIZON_YEARS,
             n_factors=n_factors,
         )
 

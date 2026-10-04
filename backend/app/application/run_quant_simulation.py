@@ -106,7 +106,9 @@ def _compare_to_actual(
     if covered == 0:
         return None
     mean_abs = sum(abs_pct_errors) / len(abs_pct_errors) if abs_pct_errors else None
-    return BacktestResult(covered_days=covered, within_band=within_band, mean_abs_pct_error_median=mean_abs)
+    return BacktestResult(
+        covered_days=covered, within_band=within_band, mean_abs_pct_error_median=mean_abs
+    )
 
 
 class RunQuantSimulationUseCase:
@@ -147,7 +149,13 @@ class RunQuantSimulationUseCase:
         logger.info(
             "quant run: request — asset_id=%s model=%s split_date=%s horizon_days=%s "
             "n_paths=%s seed=%s created_by=%s",
-            asset_id, model_key, split_date, horizon_days, n_paths, seed, created_by,
+            asset_id,
+            model_key,
+            split_date,
+            horizon_days,
+            n_paths,
+            seed,
+            created_by,
         )
         model = self._get_model(model_key)
         self._validate_caps(horizon_days, n_paths)
@@ -158,13 +166,20 @@ class RunQuantSimulationUseCase:
         before, after = self._load_and_split(asset_id, split_date)
         logger.info(
             "quant run: loaded %d bar(s) before %s, %d after — asset_id=%s",
-            len(before), split_date, len(after), asset_id,
+            len(before),
+            split_date,
+            len(after),
+            asset_id,
         )
         if len(before) < model.metadata.min_history_days:
             logger.warning(
                 "quant run: insufficient history — model=%s needs %d daily bars, has %d "
                 "(asset_id=%s, split_date=%s)",
-                model_key, model.metadata.min_history_days, len(before), asset_id, split_date,
+                model_key,
+                model.metadata.min_history_days,
+                len(before),
+                asset_id,
+                split_date,
             )
             raise InsufficientQuantHistoryError(
                 f"Not enough history before {split_date} to calibrate {model_key!r} "
@@ -176,7 +191,9 @@ class RunQuantSimulationUseCase:
         calibration = model.calibrate(closes, params)
         logger.info(
             "quant run: %s calibrated in %.3fs — diagnostics=%s",
-            model_key, time.monotonic() - t0, calibration.diagnostics,
+            model_key,
+            time.monotonic() - t0,
+            calibration.diagnostics,
         )
 
         t0 = time.monotonic()
@@ -185,13 +202,18 @@ class RunQuantSimulationUseCase:
         )
         logger.info(
             "quant run: %s simulated %d path(s) x %d day(s) in %.3fs",
-            model_key, n_paths, horizon_days, time.monotonic() - t0,
+            model_key,
+            n_paths,
+            horizon_days,
+            time.monotonic() - t0,
         )
         backtest = _compare_to_actual(sim.dates, sim.percentiles, after)
         if backtest is not None:
             logger.info(
                 "quant run: backtest — %d/%d day(s) within band, median abs error=%s",
-                backtest.within_band, backtest.covered_days, backtest.mean_abs_pct_error_median,
+                backtest.within_band,
+                backtest.covered_days,
+                backtest.mean_abs_pct_error_median,
             )
         else:
             logger.info("quant run: no holdout data after %s to backtest against", split_date)
@@ -233,7 +255,10 @@ class RunQuantSimulationUseCase:
             logger.warning(
                 "quant replay: insufficient history to replay run_id=%s (%s needs %d daily "
                 "bars, has %d)",
-                run_id, record.model_key, model.metadata.min_history_days, len(before),
+                run_id,
+                record.model_key,
+                model.metadata.min_history_days,
+                len(before),
             )
             raise InsufficientQuantHistoryError(
                 f"Not enough persisted history left before {record.split_date} to replay run {run_id} "
@@ -253,7 +278,9 @@ class RunQuantSimulationUseCase:
         )
         logger.info(
             "quant replay: run_id=%s (%s) recomputed in %.3fs",
-            run_id, record.model_key, time.monotonic() - t0,
+            run_id,
+            record.model_key,
+            time.monotonic() - t0,
         )
         return self._to_run_dto(run_id, record, sim.dates, sim.paths)
 
@@ -298,7 +325,9 @@ class RunQuantSimulationUseCase:
     def _validate_caps(self, horizon_days: int, n_paths: int) -> None:
         if not (1 <= horizon_days <= MAX_HORIZON_DAYS):
             logger.warning(
-                "quant: horizon_days=%s outside allowed range [1, %d]", horizon_days, MAX_HORIZON_DAYS
+                "quant: horizon_days=%s outside allowed range [1, %d]",
+                horizon_days,
+                MAX_HORIZON_DAYS,
             )
             raise DomainError(f"horizon_days must be between 1 and {MAX_HORIZON_DAYS}")
         if not (1 <= n_paths <= MAX_N_PATHS):

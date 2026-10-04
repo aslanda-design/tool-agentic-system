@@ -39,7 +39,9 @@ def reciprocal_rank_fusion(
             token_estimate.setdefault(candidate.key, candidate.token_estimate)
 
     fused = [
-        RetrievalCandidate(key=key, score=score, doc_text=doc_text[key], token_estimate=token_estimate[key])
+        RetrievalCandidate(
+            key=key, score=score, doc_text=doc_text[key], token_estimate=token_estimate[key]
+        )
         for key, score in scores.items()
     ]
     fused.sort(key=lambda c: c.score, reverse=True)

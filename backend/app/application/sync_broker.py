@@ -6,7 +6,7 @@ order of trust; anything it can't confidently resolve is flagged
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.domain.models import AccountSource, Transaction, TransactionType
 from app.ports.broker import BrokerHolding, BrokerPort
@@ -17,14 +17,16 @@ from .dto import SyncResultDTO
 
 
 class SyncBrokerUseCase:
-    def __init__(self, broker: BrokerPort, asset_repo: AssetRepo, portfolio_repo: PortfolioRepo) -> None:
+    def __init__(
+        self, broker: BrokerPort, asset_repo: AssetRepo, portfolio_repo: PortfolioRepo
+    ) -> None:
         self.broker = broker
         self.asset_repo = asset_repo
         self.portfolio_repo = portfolio_repo
 
     def execute(self) -> SyncResultDTO:
         snapshot = self.broker.fetch_snapshot()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         accounts_by_ext_id = {}
         for acc in snapshot.accounts:
@@ -49,7 +51,13 @@ class SyncBrokerUseCase:
                     self.asset_repo, h.symbol, h.name, h.currency, h.ibkr_conid, h.isin, h.exchange
                 )
                 self.portfolio_repo.upsert_holding(
-                    account.id, asset.id, h.quantity, h.avg_cost_price, h.currency, now, AccountSource.API
+                    account.id,
+                    asset.id,
+                    h.quantity,
+                    h.avg_cost_price,
+                    h.currency,
+                    now,
+                    AccountSource.API,
                 )
                 holdings_synced += 1
 
@@ -67,7 +75,13 @@ class SyncBrokerUseCase:
             asset_id = None
             if t.symbol:
                 asset = resolve_asset(
-                    self.asset_repo, t.symbol, t.name or t.symbol, t.currency, t.ibkr_conid, t.isin, t.exchange
+                    self.asset_repo,
+                    t.symbol,
+                    t.name or t.symbol,
+                    t.currency,
+                    t.ibkr_conid,
+                    t.isin,
+                    t.exchange,
                 )
                 asset_id = asset.id
             transactions.append(

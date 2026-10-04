@@ -36,7 +36,9 @@ from app.ports.statements import StatementPort
 
 logger = logging.getLogger(__name__)
 
-SEND_REQUEST_URL = "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/SendRequest"
+SEND_REQUEST_URL = (
+    "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/SendRequest"
+)
 STATEMENT_NOT_READY_CODE = "1019"
 MAX_POLL_ATTEMPTS = 6
 POLL_DELAY_SECONDS = 5
@@ -87,17 +89,24 @@ class IBKRFlexAdapter(StatementPort):
     def _fetch_statement_xml(self) -> bytes:
         with httpx.Client(timeout=30) as client:
             logger.info("Requesting Flex statement (query_id=%s)", self.query_id)
-            send_resp = client.get(SEND_REQUEST_URL, params={"t": self.token, "q": self.query_id, "v": "3"})
+            send_resp = client.get(
+                SEND_REQUEST_URL, params={"t": self.token, "q": self.query_id, "v": "3"}
+            )
             send_resp.raise_for_status()
             send_root = ET.fromstring(send_resp.content)
             status = send_root.findtext("Status")
             if status != "Success":
-                error = send_root.findtext("ErrorMessage") or "Unknown error requesting Flex statement"
+                error = (
+                    send_root.findtext("ErrorMessage") or "Unknown error requesting Flex statement"
+                )
                 logger.warning("Flex SendRequest failed (query_id=%s): %s", self.query_id, error)
                 raise BrokerConnectionError(f"IBKR Flex request failed: {error}")
             reference_code = send_root.findtext("ReferenceCode")
             statement_url = send_root.findtext("Url")
-            logger.info("Flex SendRequest accepted, reference_code=%s — polling for statement", reference_code)
+            logger.info(
+                "Flex SendRequest accepted, reference_code=%s — polling for statement",
+                reference_code,
+            )
 
             for attempt in range(1, MAX_POLL_ATTEMPTS + 1):
                 time.sleep(POLL_DELAY_SECONDS)
@@ -105,13 +114,28 @@ class IBKRFlexAdapter(StatementPort):
                     statement_url, params={"t": self.token, "q": reference_code, "v": "3"}
                 )
                 stmt_resp.raise_for_status()
-                if b"<FlexStatementResponse>" in stmt_resp.content and STATEMENT_NOT_READY_CODE.encode() in stmt_resp.content:
-                    logger.info("Flex statement not ready yet (poll attempt %d/%d)", attempt, MAX_POLL_ATTEMPTS)
+                if (
+                    b"<FlexStatementResponse>" in stmt_resp.content
+                    and STATEMENT_NOT_READY_CODE.encode() in stmt_resp.content
+                ):
+                    logger.info(
+                        "Flex statement not ready yet (poll attempt %d/%d)",
+                        attempt,
+                        MAX_POLL_ATTEMPTS,
+                    )
                     continue
-                logger.info("Flex statement received (%d bytes) after %d poll attempt(s)", len(stmt_resp.content), attempt)
+                logger.info(
+                    "Flex statement received (%d bytes) after %d poll attempt(s)",
+                    len(stmt_resp.content),
+                    attempt,
+                )
                 return stmt_resp.content
 
-        logger.warning("Flex statement (query_id=%s) wasn't ready after %d attempts", self.query_id, MAX_POLL_ATTEMPTS)
+        logger.warning(
+            "Flex statement (query_id=%s) wasn't ready after %d attempts",
+            self.query_id,
+            MAX_POLL_ATTEMPTS,
+        )
         raise BrokerConnectionError("IBKR Flex statement wasn't ready in time — try again shortly.")
 
     def _parse_trade(self, el: ET.Element) -> BrokerTransaction | None:
@@ -143,7 +167,9 @@ class IBKRFlexAdapter(StatementPort):
         try:
             amount = Decimal(el.get("amount", "0"))
         except InvalidOperation as exc:
-            logger.warning("Skipping <CashTransaction> with unparseable amount (%s): %s", el.attrib, exc)
+            logger.warning(
+                "Skipping <CashTransaction> with unparseable amount (%s): %s", el.attrib, exc
+            )
             return None
 
         if "dividend" in raw_type:
@@ -161,16 +187,18 @@ class IBKRFlexAdapter(StatementPort):
         try:
             executed_at = _parse_datetime(el.get("dateTime", el.get("settleDate", "")), "000000")
         except (ValueError, TypeError) as exc:
-            logger.warning("Skipping <CashTransaction> with unparseable date (%s): %s", el.attrib, exc)
+            logger.warning(
+                "Skipping <CashTransaction> with unparseable date (%s): %s", el.attrib, exc
+            )
             return None
         return BrokerTransaction(
             account_external_id=self.account_external_id,
             external_id=el.get("transactionID") or "",
             symbol=el.get("symbol") or None,
             type=txn_type,
-            quantity=Decimal("1"),
+            quantity=Decimal(1),
             price=abs(amount),
-            fees=Decimal("0"),
+            fees=Decimal(0),
             currency=(el.get("currency") or "USD").upper(),
             executed_at=executed_at,
             ibkr_conid=el.get("conid"),

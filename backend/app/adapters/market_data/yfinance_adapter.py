@@ -16,7 +16,13 @@ from decimal import Decimal
 import yfinance as yf
 
 from app.domain.listings import ListingInfo
-from app.ports.market_data import AssetSearchResult, BarData, IntradayBarData, MarketDataPort, QuoteData
+from app.ports.market_data import (
+    AssetSearchResult,
+    BarData,
+    IntradayBarData,
+    MarketDataPort,
+    QuoteData,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +103,9 @@ class YFinanceMarketData(MarketDataPort):
         try:
             ticker = yf.Ticker(symbol)
             _, divisor = _normalize_currency(ticker.fast_info.get("currency"))
-            df = ticker.history(start=start, end=end + timedelta(days=1), interval="1d", auto_adjust=False)
+            df = ticker.history(
+                start=start, end=end + timedelta(days=1), interval="1d", auto_adjust=False
+            )
         except Exception:
             logger.warning("yfinance: failed to fetch history for %s", symbol, exc_info=True)
             return []
@@ -142,7 +150,12 @@ class YFinanceMarketData(MarketDataPort):
             _, divisor = _normalize_currency(ticker.fast_info.get("currency"))
             df = ticker.history(period=f"{lookback_days}d", interval=interval, auto_adjust=False)
         except Exception:
-            logger.warning("yfinance: failed to fetch intraday %s history for %s", granularity, symbol, exc_info=True)
+            logger.warning(
+                "yfinance: failed to fetch intraday %s history for %s",
+                granularity,
+                symbol,
+                exc_info=True,
+            )
             return []
         if df is None or df.empty:
             return []

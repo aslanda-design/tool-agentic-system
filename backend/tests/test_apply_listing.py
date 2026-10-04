@@ -14,7 +14,11 @@ from tests.fakes import FakeAssetRepo
 
 def _make_unmapped_asset(repo: FakeAssetRepo, symbol="VUSA", currency="EUR"):
     return repo.create(
-        symbol=symbol, name=symbol, asset_class=AssetClass.EQUITY, currency=currency, needs_mapping=True
+        symbol=symbol,
+        name=symbol,
+        asset_class=AssetClass.EQUITY,
+        currency=currency,
+        needs_mapping=True,
     )
 
 
@@ -45,7 +49,11 @@ def test_remap_replaces_the_listing_not_adds_a_second_one():
     repo.apply_listing(asset.id, "VUSA.DE", "EUR", "XETR", None, None)
     repo.apply_listing(asset.id, "VUSA.L", "GBP", "XLON", None, None)
 
-    mappings = [(a.id, value) for a, value in repo.list_assets_with_scheme(IdentifierScheme.YFINANCE) if a.id == asset.id]
+    mappings = [
+        (a.id, value)
+        for a, value in repo.list_assets_with_scheme(IdentifierScheme.YFINANCE)
+        if a.id == asset.id
+    ]
     assert mappings == [(asset.id, "VUSA.L")]
     assert repo.find_by_identifier(IdentifierScheme.YFINANCE, "VUSA.DE") is None
     assert repo.get(asset.id).currency == "GBP"
@@ -70,7 +78,9 @@ def test_reapplying_the_same_symbol_is_a_harmless_no_op_on_the_identifier():
     repo.apply_listing(asset.id, "VUSA.L", "GBP", "XLON", None, None)
     repo.apply_listing(asset.id, "VUSA.L", "GBP", "XLON", None, None)
 
-    mappings = [v for a, v in repo.list_assets_with_scheme(IdentifierScheme.YFINANCE) if a.id == asset.id]
+    mappings = [
+        v for a, v in repo.list_assets_with_scheme(IdentifierScheme.YFINANCE) if a.id == asset.id
+    ]
     assert mappings == ["VUSA.L"]
 
 
@@ -78,7 +88,9 @@ def test_apply_listing_with_a_name_renames_the_asset():
     repo = FakeAssetRepo()
     asset = _make_unmapped_asset(repo)
 
-    repo.apply_listing(asset.id, "VUSA.L", "GBP", "XLON", None, None, name="Vanguard S&P 500 UCITS ETF")
+    repo.apply_listing(
+        asset.id, "VUSA.L", "GBP", "XLON", None, None, name="Vanguard S&P 500 UCITS ETF"
+    )
 
     assert repo.get(asset.id).name == "Vanguard S&P 500 UCITS ETF"
 

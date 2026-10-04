@@ -86,7 +86,9 @@ def parse_generic_csv(file_bytes: bytes) -> ParsedStatement:
         symbol = (raw.get(mapped["symbol"], "").strip() or None) if "symbol" in mapped else None
         name = (raw.get(mapped["name"], "").strip() or None) if "name" in mapped else None
         isin = (raw.get(mapped["isin"], "").strip() or None) if "isin" in mapped else None
-        exchange = (raw.get(mapped["exchange"], "").strip() or None) if "exchange" in mapped else None
+        exchange = (
+            (raw.get(mapped["exchange"], "").strip() or None) if "exchange" in mapped else None
+        )
 
         external_id = None
         if "external_id" in mapped:

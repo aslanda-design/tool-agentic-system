@@ -63,7 +63,10 @@ def _load_cases() -> list[dict]:
     cases = []
     for directory in (CASES_DIR, LOCAL_CASES_DIR):
         if directory.exists():
-            cases.extend(json.loads(path.read_text(encoding="utf-8")) for path in sorted(directory.glob("*.json")))
+            cases.extend(
+                json.loads(path.read_text(encoding="utf-8"))
+                for path in sorted(directory.glob("*.json"))
+            )
     return cases
 
 
@@ -75,7 +78,9 @@ async def _fetch_agent_tools() -> list[dict]:
         return await session.tool_schemas()
 
 
-def _is_safety_violation(outcome_final_tool: str | None, outcome_symbol: str | None, expected: dict) -> bool:
+def _is_safety_violation(
+    outcome_final_tool: str | None, outcome_symbol: str | None, expected: dict
+) -> bool:
     """A save that shouldn't have happened at all (expected a flag), or a
     save of the wrong candidate. A save the replay guard itself rejected
     (stale price / no currency) never reaches here — call_tool returns
@@ -107,9 +112,13 @@ async def _run_one(case: dict, tools: list[dict], model: str, provider: str | No
         "model": model,
         "final_accuracy": session.outcome.final_tool == case["expected"]["final_tool"]
         and session.outcome.symbol == case["expected"].get("symbol"),
-        "safety_violation": _is_safety_violation(session.outcome.final_tool, session.outcome.symbol, case["expected"]),
+        "safety_violation": _is_safety_violation(
+            session.outcome.final_tool, session.outcome.symbol, case["expected"]
+        ),
         "terminated_ok": result.status in TERMINAL_TOOLS.values(),
-        "invalid_calls": sum(1 for c in result.tool_calls if (c["error"] or "").startswith("unknown tool")),
+        "invalid_calls": sum(
+            1 for c in result.tool_calls if (c["error"] or "").startswith("unknown tool")
+        ),
         "tool_calls": len(result.tool_calls),
         "latency_s": latency_s,
         "prompt_tokens": result.prompt_tokens,
@@ -142,7 +151,9 @@ def _summarize(rows: list[dict], model: str) -> dict:
         "p50_latency_s": _percentile(latencies, 0.5),
         "p95_latency_s": _percentile(latencies, 0.95),
         "avg_prompt_tokens": statistics.fmean(r["prompt_tokens"] for r in model_rows) if n else 0.0,
-        "avg_completion_tokens": statistics.fmean(r["completion_tokens"] for r in model_rows) if n else 0.0,
+        "avg_completion_tokens": statistics.fmean(r["completion_tokens"] for r in model_rows)
+        if n
+        else 0.0,
     }
 
 
@@ -174,22 +185,34 @@ async def _main_async(models: list[str], repeat: int, provider: str | None) -> N
     stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     summaries = [_summarize(rows, model) for model in models]
     out_path = RESULTS_DIR / f"{stamp}.json"
-    out_path.write_text(json.dumps({"rows": rows, "summaries": summaries}, indent=2), encoding="utf-8")
+    out_path.write_text(
+        json.dumps({"rows": rows, "summaries": summaries}, indent=2), encoding="utf-8"
+    )
 
     _print_table(summaries)
     print(f"\nFull results: {out_path}")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--model", action="append", required=True, dest="models", help="A model tag/name; repeatable.")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--model",
+        action="append",
+        required=True,
+        dest="models",
+        help="A model tag/name; repeatable.",
+    )
     parser.add_argument(
         "--provider",
         default=None,
         choices=["ollama", "openai"],
         help="Override AGENT_PROVIDER for every model in this run (default: settings.agent_provider).",
     )
-    parser.add_argument("--repeat", type=int, default=1, help="Runs per case per model (default 1).")
+    parser.add_argument(
+        "--repeat", type=int, default=1, help="Runs per case per model (default 1)."
+    )
     args = parser.parse_args()
     asyncio.run(_main_async(args.models, args.repeat, args.provider))
 

@@ -16,6 +16,7 @@ a raised exception — see backend/ai/AGENTS.md rule 2).
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 
 from ai.mcp_servers.security import server
 from ai.mcp_servers.security.tools import (
@@ -67,7 +68,9 @@ def _seed_resolution(repo: FakeResolutionRepo, *, with_priceable_candidate: bool
         features={"has_recent_price": with_priceable_candidate},
         score=85,
     )
-    resolution_id = repo.create(_ctx(), ResolutionStatus.NEEDS_REVIEW, None, "", "rules-v1", [candidate])
+    resolution_id = repo.create(
+        _ctx(), ResolutionStatus.NEEDS_REVIEW, None, "", "rules-v1", [candidate]
+    )
     return resolution_id, candidate.id
 
 
@@ -102,7 +105,7 @@ def test_get_resolution_serializes_candidates_as_json_safe(monkeypatch):
     candidate = result["candidates"][0]
     assert candidate["found_by"] == ["openfigi"]  # set -> sorted list
     assert candidate["info"]["last_close"] == 100.0  # Decimal -> float
-    assert candidate["info"]["last_trade_date"] == "2026-09-14"  # date -> ISO string
+    assert candidate["info"]["last_trade_date"] == date.today().isoformat()  # date -> ISO string
 
 
 # --- resolve_isin / lookup_isin / search_listings / validate_listing (use case) ---
@@ -110,7 +113,17 @@ def test_get_resolution_serializes_candidates_as_json_safe(monkeypatch):
 
 def test_resolve_isin_previews_without_persisting(monkeypatch):
     security_master = FakeSecurityMaster(
-        {"IE00B4L5Y983": [FigiListing(ticker="EUNL", exch_code="GY", name="X", security_type="ETP", share_class_figi=None)]}
+        {
+            "IE00B4L5Y983": [
+                FigiListing(
+                    ticker="EUNL",
+                    exch_code="GY",
+                    name="X",
+                    security_type="ETP",
+                    share_class_figi=None,
+                )
+            ]
+        }
     )
     market_data = FakeMarketData(listings={"EUNL.DE": _listing("EUNL.DE", "EUR")})
     use_case = _use_case(security_master, market_data)
@@ -139,25 +152,51 @@ def test_lookup_isin_returns_empty_list_when_isin_confirmed_unknown(monkeypatch)
 
 def test_search_listings_wraps_market_data_search(monkeypatch):
     use_case = _use_case(
-        market_data=FakeMarketData(search_results={"apple": [AssetSearchResult(symbol="AAPL", name="Apple", exchange=None, asset_class="EQUITY", currency="USD")]})
+        market_data=FakeMarketData(
+            search_results={
+                "apple": [
+                    AssetSearchResult(
+                        symbol="AAPL",
+                        name="Apple",
+                        exchange=None,
+                        asset_class="EQUITY",
+                        currency="USD",
+                    )
+                ]
+            }
+        )
     )
-    monkeypatch.setattr(search_listings_tool, "build_resolve_security_use_case", lambda db: use_case)
+    monkeypatch.setattr(
+        search_listings_tool, "build_resolve_security_use_case", lambda db: use_case
+    )
 
     result = search_listings_tool.search_listings("apple")
 
-    assert result == [{"symbol": "AAPL", "name": "Apple", "exchange": None, "asset_class": "EQUITY", "currency": "USD"}]
+    assert result == [
+        {
+            "symbol": "AAPL",
+            "name": "Apple",
+            "exchange": None,
+            "asset_class": "EQUITY",
+            "currency": "USD",
+        }
+    ]
 
 
 def test_validate_listing_returns_none_for_unknown_symbol(monkeypatch):
     use_case = _use_case(market_data=FakeMarketData())
-    monkeypatch.setattr(validate_listing_tool, "build_resolve_security_use_case", lambda db: use_case)
+    monkeypatch.setattr(
+        validate_listing_tool, "build_resolve_security_use_case", lambda db: use_case
+    )
 
     assert validate_listing_tool.validate_listing("NOPE") is None
 
 
 def test_validate_listing_returns_jsonable_listing_info(monkeypatch):
     use_case = _use_case(market_data=FakeMarketData(listings={"AAPL": _listing("AAPL", "USD")}))
-    monkeypatch.setattr(validate_listing_tool, "build_resolve_security_use_case", lambda db: use_case)
+    monkeypatch.setattr(
+        validate_listing_tool, "build_resolve_security_use_case", lambda db: use_case
+    )
 
     result = validate_listing_tool.validate_listing("AAPL")
 
@@ -181,7 +220,9 @@ def test_add_candidate_returns_error_dict_for_missing_resolution(monkeypatch):
 def test_add_candidate_scores_and_persists_new_candidate(monkeypatch):
     repo = FakeResolutionRepo()
     resolution_id, _ = _seed_resolution(repo)
-    use_case = _use_case(resolution_repo=repo, market_data=FakeMarketData(listings={"AAPL": _listing("AAPL", "USD")}))
+    use_case = _use_case(
+        resolution_repo=repo, market_data=FakeMarketData(listings={"AAPL": _listing("AAPL", "USD")})
+    )
     monkeypatch.setattr(add_candidate_tool, "build_resolve_security_use_case", lambda db: use_case)
 
     result = add_candidate_tool.add_candidate(resolution_id=resolution_id, symbol="AAPL")
@@ -193,12 +234,18 @@ def test_add_candidate_scores_and_persists_new_candidate(monkeypatch):
 
 def test_save_security_mapping_returns_error_dict_on_domain_error(monkeypatch):
     repo = FakeResolutionRepo()
-    resolution_id, _ = _seed_resolution(repo, with_priceable_candidate=False)  # no recent price -> accept() rejects
+    resolution_id, _ = _seed_resolution(
+        repo, with_priceable_candidate=False
+    )  # no recent price -> accept() rejects
     _, candidate_id = resolution_id, repo.get(resolution_id).candidates[0].id
     use_case = _use_case(resolution_repo=repo)
-    monkeypatch.setattr(save_security_mapping_tool, "build_resolve_security_use_case", lambda db: use_case)
+    monkeypatch.setattr(
+        save_security_mapping_tool, "build_resolve_security_use_case", lambda db: use_case
+    )
 
-    result = save_security_mapping_tool.save_security_mapping(resolution_id, candidate_id, "test reason")
+    result = save_security_mapping_tool.save_security_mapping(
+        resolution_id, candidate_id, "test reason"
+    )
 
     assert "error" in result
     assert repo.get(resolution_id).status is ResolutionStatus.NEEDS_REVIEW  # unchanged
@@ -211,11 +258,19 @@ def test_save_security_mapping_applies_listing_and_resolves(monkeypatch):
     repo = FakeResolutionRepo()
     resolution_id, candidate_id = _seed_resolution(repo)
     asset_repo = FakeAssetRepo()
-    asset_repo.create("IE00B4L5Y983", "iShares Core MSCI World", AssetClass.ETF, "USD", isin="IE00B4L5Y983")  # id=1, matches _ctx()'s asset_id
-    use_case = _use_case(resolution_repo=repo, asset_repo=asset_repo, portfolio_repo=FakePortfolioRepo())
-    monkeypatch.setattr(save_security_mapping_tool, "build_resolve_security_use_case", lambda db: use_case)
+    asset_repo.create(
+        "IE00B4L5Y983", "iShares Core MSCI World", AssetClass.ETF, "USD", isin="IE00B4L5Y983"
+    )  # id=1, matches _ctx()'s asset_id
+    use_case = _use_case(
+        resolution_repo=repo, asset_repo=asset_repo, portfolio_repo=FakePortfolioRepo()
+    )
+    monkeypatch.setattr(
+        save_security_mapping_tool, "build_resolve_security_use_case", lambda db: use_case
+    )
 
-    result = save_security_mapping_tool.save_security_mapping(resolution_id, candidate_id, "confident match")
+    result = save_security_mapping_tool.save_security_mapping(
+        resolution_id, candidate_id, "confident match"
+    )
 
     assert result["status"] == "RESOLVED_BY_AGENT"
     assert result["decided_by"] == "agent"
@@ -224,7 +279,9 @@ def test_save_security_mapping_applies_listing_and_resolves(monkeypatch):
 
 def test_flag_for_review_returns_error_dict_for_missing_resolution(monkeypatch):
     use_case = _use_case()
-    monkeypatch.setattr(flag_for_review_tool, "build_resolve_security_use_case", lambda db: use_case)
+    monkeypatch.setattr(
+        flag_for_review_tool, "build_resolve_security_use_case", lambda db: use_case
+    )
 
     result = flag_for_review_tool.flag_for_review(999, "ambiguous")
 
@@ -235,7 +292,9 @@ def test_flag_for_review_sets_note_and_decided_by(monkeypatch):
     repo = FakeResolutionRepo()
     resolution_id, _ = _seed_resolution(repo)
     use_case = _use_case(resolution_repo=repo)
-    monkeypatch.setattr(flag_for_review_tool, "build_resolve_security_use_case", lambda db: use_case)
+    monkeypatch.setattr(
+        flag_for_review_tool, "build_resolve_security_use_case", lambda db: use_case
+    )
 
     result = flag_for_review_tool.flag_for_review(resolution_id, "no clear winner")
 
@@ -268,7 +327,9 @@ def test_server_registers_all_nine_tools():
 
 def test_server_call_tool_round_trips_through_the_registered_function(monkeypatch):
     use_case = _use_case(market_data=FakeMarketData(listings={"AAPL": _listing("AAPL", "USD")}))
-    monkeypatch.setattr(validate_listing_tool, "build_resolve_security_use_case", lambda db: use_case)
+    monkeypatch.setattr(
+        validate_listing_tool, "build_resolve_security_use_case", lambda db: use_case
+    )
 
     result = asyncio.run(server.mcp.call_tool("validate_listing", {"symbol": "AAPL"}))
 

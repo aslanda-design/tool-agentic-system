@@ -6,7 +6,7 @@ boundary and commits once per request after a use case completes.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, select, tuple_
@@ -37,6 +37,7 @@ from app.domain.models import (
 from app.domain.quant.types import BacktestResult, QuantRunRecord
 from app.domain.tool_rag.types import RetrievalCandidate, ToolDocument, ToolKey
 from app.ports.chat import ChatRepo
+from app.ports.market_intel import AssetIntelCacheRepo, CachedIntel
 from app.ports.notes import NoteRepo
 from app.ports.repositories import (
     AssetRepo,
@@ -52,6 +53,7 @@ from .orm import (
     AgentRunORM,
     AiNoteORM,
     AssetIdentifierORM,
+    AssetIntelCacheORM,
     AssetORM,
     AssetResolutionORM,
     CashBalanceORM,
@@ -170,7 +172,9 @@ class SqlAssetRepo(AssetRepo):
         return _asset_from_orm(row) if row else None
 
     def get_by_symbol(self, symbol: str) -> Asset | None:
-        row = self.session.execute(select(AssetORM).where(AssetORM.symbol == symbol)).scalar_one_or_none()
+        row = self.session.execute(
+            select(AssetORM).where(AssetORM.symbol == symbol)
+        ).scalar_one_or_none()
         return _asset_from_orm(row) if row else None
 
     def find_by_identifier(self, scheme: IdentifierScheme, value: str) -> Asset | None:
@@ -218,13 +222,17 @@ class SqlAssetRepo(AssetRepo):
     def set_isin(self, asset_id: int, isin: str) -> None:
         row = self.session.get(AssetORM, asset_id)
         if row is not None and not row.isin:
-            existing = self.session.execute(select(AssetORM).where(AssetORM.isin == isin)).scalar_one_or_none()
+            existing = self.session.execute(
+                select(AssetORM).where(AssetORM.isin == isin)
+            ).scalar_one_or_none()
             if existing is None:  # isin has a unique constraint — don't collide with another asset
                 row.isin = isin
                 self.session.flush()
 
     def list_needing_mapping(self) -> list[Asset]:
-        rows = self.session.execute(select(AssetORM).where(AssetORM.needs_mapping.is_(True))).scalars()
+        rows = self.session.execute(
+            select(AssetORM).where(AssetORM.needs_mapping.is_(True))
+        ).scalars()
         return [_asset_from_orm(r) for r in rows]
 
     def get_identifier_value(self, asset_id: int, scheme: IdentifierScheme) -> str | None:
@@ -300,18 +308,24 @@ class SqlAssetRepo(AssetRepo):
         if row is None:
             raise AssetNotFoundError(f"Asset {asset_id} not found")
 
-        conflict = self.session.get(AssetIdentifierORM, {"scheme": IdentifierScheme.YFINANCE.value, "value": yahoo_symbol})
+        conflict = self.session.get(
+            AssetIdentifierORM, {"scheme": IdentifierScheme.YFINANCE.value, "value": yahoo_symbol}
+        )
         if conflict is not None and conflict.asset_id != asset_id:
             raise AssetConflictError(
                 f"{yahoo_symbol!r} is already mapped to asset {conflict.asset_id} — merge needed"
             )
 
-        existing_yfinance = self.session.execute(
-            select(AssetIdentifierORM).where(
-                AssetIdentifierORM.asset_id == asset_id,
-                AssetIdentifierORM.scheme == IdentifierScheme.YFINANCE.value,
+        existing_yfinance = (
+            self.session.execute(
+                select(AssetIdentifierORM).where(
+                    AssetIdentifierORM.asset_id == asset_id,
+                    AssetIdentifierORM.scheme == IdentifierScheme.YFINANCE.value,
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         symbol_changed = not any(i.value == yahoo_symbol for i in existing_yfinance)
         for ident in existing_yfinance:
             if ident.value != yahoo_symbol:
@@ -324,7 +338,11 @@ class SqlAssetRepo(AssetRepo):
             self.session.query(QuoteORM).filter(QuoteORM.asset_id == asset_id).delete()
             if conflict is None:
                 self.session.add(
-                    AssetIdentifierORM(scheme=IdentifierScheme.YFINANCE.value, value=yahoo_symbol, asset_id=asset_id)
+                    AssetIdentifierORM(
+                        scheme=IdentifierScheme.YFINANCE.value,
+                        value=yahoo_symbol,
+                        asset_id=asset_id,
+                    )
                 )
 
         row.currency = currency.upper()
@@ -347,7 +365,9 @@ class SqlPortfolioRepo(PortfolioRepo):
         self, broker_key: str, external_id: str, name: str, currency: str, source: AccountSource
     ) -> Account:
         row = self.session.execute(
-            select(AccountORM).where(AccountORM.broker_key == broker_key, AccountORM.external_id == external_id)
+            select(AccountORM).where(
+                AccountORM.broker_key == broker_key, AccountORM.external_id == external_id
+            )
         ).scalar_one_or_none()
         if row is None:
             row = AccountORM(
@@ -380,7 +400,9 @@ class SqlPortfolioRepo(PortfolioRepo):
         source: AccountSource,
     ) -> None:
         row = self.session.execute(
-            select(HoldingORM).where(HoldingORM.account_id == account_id, HoldingORM.asset_id == asset_id)
+            select(HoldingORM).where(
+                HoldingORM.account_id == account_id, HoldingORM.asset_id == asset_id
+            )
         ).scalar_one_or_none()
         if row is None:
             row = HoldingORM(account_id=account_id, asset_id=asset_id)
@@ -404,7 +426,9 @@ class SqlPortfolioRepo(PortfolioRepo):
 
     def get_holding(self, account_id: int, asset_id: int) -> dict | None:
         row = self.session.execute(
-            select(HoldingORM).where(HoldingORM.account_id == account_id, HoldingORM.asset_id == asset_id)
+            select(HoldingORM).where(
+                HoldingORM.account_id == account_id, HoldingORM.asset_id == asset_id
+            )
         ).scalar_one_or_none()
         if row is None:
             return None
@@ -417,8 +441,10 @@ class SqlPortfolioRepo(PortfolioRepo):
         }
 
     def list_positions(self, account_id: int | None = None) -> list[dict]:
-        stmt = select(HoldingORM, AssetORM, AccountORM).join(AssetORM, HoldingORM.asset_id == AssetORM.id).join(
-            AccountORM, HoldingORM.account_id == AccountORM.id
+        stmt = (
+            select(HoldingORM, AssetORM, AccountORM)
+            .join(AssetORM, HoldingORM.asset_id == AssetORM.id)
+            .join(AccountORM, HoldingORM.account_id == AccountORM.id)
         )
         if account_id is not None:
             stmt = stmt.where(HoldingORM.account_id == account_id)
@@ -438,8 +464,12 @@ class SqlPortfolioRepo(PortfolioRepo):
             if Decimal(holding.quantity) != 0
         ]
 
-    def upsert_cash_balance(self, account_id: int, currency: str, amount: Decimal, as_of: datetime) -> None:
-        row = self.session.get(CashBalanceORM, {"account_id": account_id, "currency": currency.upper()})
+    def upsert_cash_balance(
+        self, account_id: int, currency: str, amount: Decimal, as_of: datetime
+    ) -> None:
+        row = self.session.get(
+            CashBalanceORM, {"account_id": account_id, "currency": currency.upper()}
+        )
         if row is None:
             row = CashBalanceORM(account_id=account_id, currency=currency.upper())
             self.session.add(row)
@@ -453,7 +483,12 @@ class SqlPortfolioRepo(PortfolioRepo):
             stmt = stmt.where(CashBalanceORM.account_id == account_id)
         rows = self.session.execute(stmt).scalars()
         return [
-            {"account_id": r.account_id, "currency": r.currency, "amount": Decimal(r.amount), "as_of": r.as_of}
+            {
+                "account_id": r.account_id,
+                "currency": r.currency,
+                "amount": Decimal(r.amount),
+                "as_of": r.as_of,
+            }
             for r in rows
         ]
 
@@ -464,7 +499,8 @@ class SqlPortfolioRepo(PortfolioRepo):
         existing = set(
             self.session.execute(
                 select(TransactionORM.account_id, TransactionORM.external_id).where(
-                    TransactionORM.account_id.in_(account_ids), TransactionORM.external_id.is_not(None)
+                    TransactionORM.account_id.in_(account_ids),
+                    TransactionORM.external_id.is_not(None),
                 )
             ).all()
         )
@@ -495,7 +531,9 @@ class SqlPortfolioRepo(PortfolioRepo):
         return inserted
 
     def delete_transactions_for_asset(self, asset_id: int) -> int:
-        count = self.session.query(TransactionORM).filter(TransactionORM.asset_id == asset_id).delete()
+        count = (
+            self.session.query(TransactionORM).filter(TransactionORM.asset_id == asset_id).delete()
+        )
         self.session.flush()
         return count
 
@@ -617,7 +655,9 @@ class SqlPortfolioRepo(PortfolioRepo):
             for r in rows
         ]
 
-    def get_position_snapshots_totals(self, start: date, end: date, asset_ids: list[int]) -> list[dict]:
+    def get_position_snapshots_totals(
+        self, start: date, end: date, asset_ids: list[int]
+    ) -> list[dict]:
         if not asset_ids:
             return []
         rows = self.session.execute(
@@ -635,7 +675,8 @@ class SqlPortfolioRepo(PortfolioRepo):
             .order_by(PositionSnapshotORM.date)
         ).all()
         return [
-            {"date": d, "market_value": Decimal(mv), "cost_basis": Decimal(cb)} for d, mv, cb in rows
+            {"date": d, "market_value": Decimal(mv), "cost_basis": Decimal(cb)}
+            for d, mv, cb in rows
         ]
 
     def get_latest_snapshot(self) -> PortfolioSnapshotPoint | None:
@@ -653,7 +694,9 @@ class SqlPortfolioRepo(PortfolioRepo):
         )
 
     def last_snapshot_date(self) -> date | None:
-        return self.session.execute(select(PortfolioSnapshotORM.date).order_by(PortfolioSnapshotORM.date.desc()).limit(1)).scalar_one_or_none()
+        return self.session.execute(
+            select(PortfolioSnapshotORM.date).order_by(PortfolioSnapshotORM.date.desc()).limit(1)
+        ).scalar_one_or_none()
 
     def earliest_transaction_date(self, account_id: int | None = None) -> date | None:
         stmt = select(TransactionORM.trade_date).order_by(TransactionORM.trade_date).limit(1)
@@ -715,7 +758,9 @@ class SqlMarketDataRepo(MarketDataRepo):
     def get_bars(self, asset_id: int, start: date, end: date) -> list[dict]:
         rows = self.session.execute(
             select(PriceBarORM)
-            .where(PriceBarORM.asset_id == asset_id, PriceBarORM.date >= start, PriceBarORM.date <= end)
+            .where(
+                PriceBarORM.asset_id == asset_id, PriceBarORM.date >= start, PriceBarORM.date <= end
+            )
             .order_by(PriceBarORM.date)
         ).scalars()
         return [
@@ -742,7 +787,10 @@ class SqlMarketDataRepo(MarketDataRepo):
 
     def latest_price_date(self, asset_id: int) -> date | None:
         return self.session.execute(
-            select(PriceBarORM.date).where(PriceBarORM.asset_id == asset_id).order_by(PriceBarORM.date.desc()).limit(1)
+            select(PriceBarORM.date)
+            .where(PriceBarORM.asset_id == asset_id)
+            .order_by(PriceBarORM.date.desc())
+            .limit(1)
         ).scalar_one_or_none()
 
     def upsert_fx_rates(self, base: str, quote: str, rates: dict[date, Decimal]) -> None:
@@ -758,7 +806,11 @@ class SqlMarketDataRepo(MarketDataRepo):
     def get_fx_rate(self, base: str, quote: str, on_date: date) -> Decimal | None:
         row = self.session.execute(
             select(FxRateORM.rate)
-            .where(FxRateORM.base == base.upper(), FxRateORM.quote == quote.upper(), FxRateORM.date <= on_date)
+            .where(
+                FxRateORM.base == base.upper(),
+                FxRateORM.quote == quote.upper(),
+                FxRateORM.date <= on_date,
+            )
             .order_by(FxRateORM.date.desc())
             .limit(1)
         ).scalar_one_or_none()
@@ -817,7 +869,7 @@ class SqlResolutionRepo(ResolutionRepo):
             decided_by=decided_by,
             note=note,
             scorer_version=scorer_version,
-            decided_at=datetime.now(timezone.utc) if status.is_terminal else None,
+            decided_at=datetime.now(UTC) if status.is_terminal else None,
         )
         self.session.add(row)
         self.session.flush()  # need row.id for the candidates' FK
@@ -842,7 +894,9 @@ class SqlResolutionRepo(ResolutionRepo):
         ).scalar_one_or_none()
         return _resolution_from_orm(row) if row else None
 
-    def list_by_status(self, statuses: list[ResolutionStatus], limit: int = 50) -> list[ResolutionDTO]:
+    def list_by_status(
+        self, statuses: list[ResolutionStatus], limit: int = 50
+    ) -> list[ResolutionDTO]:
         values = [s.value for s in statuses]
         rows = self.session.execute(
             select(AssetResolutionORM)
@@ -859,7 +913,9 @@ class SqlResolutionRepo(ResolutionRepo):
         candidate.id = row.id
         return row.id
 
-    def set_status(self, resolution_id: int, status: ResolutionStatus, decided_by: str | None, note: str) -> None:
+    def set_status(
+        self, resolution_id: int, status: ResolutionStatus, decided_by: str | None, note: str
+    ) -> None:
         row = self.session.get(AssetResolutionORM, resolution_id)
         if row is None:
             return
@@ -867,12 +923,14 @@ class SqlResolutionRepo(ResolutionRepo):
         row.decided_by = decided_by
         row.note = note
         if status.is_terminal:
-            row.decided_at = datetime.now(timezone.utc)
+            row.decided_at = datetime.now(UTC)
         self.session.flush()
 
     def select_candidate(self, resolution_id: int, candidate_id: int) -> None:
         rows = self.session.execute(
-            select(ResolutionCandidateORM).where(ResolutionCandidateORM.resolution_id == resolution_id)
+            select(ResolutionCandidateORM).where(
+                ResolutionCandidateORM.resolution_id == resolution_id
+            )
         ).scalars()
         for r in rows:
             r.selected = r.id == candidate_id
@@ -887,7 +945,7 @@ class SqlResolutionRepo(ResolutionRepo):
         ).scalar_one_or_none()
         if row is not None:
             row.status = ResolutionStatus.SUPERSEDED.value
-            row.decided_at = datetime.now(timezone.utc)
+            row.decided_at = datetime.now(UTC)
             self.session.flush()
 
     def add_agent_run(self, run: AgentRunRecord) -> int:
@@ -910,20 +968,26 @@ class SqlResolutionRepo(ResolutionRepo):
         return row.id
 
     def list_assets_to_resolve(self, retry_empty_after_hours: int = 24) -> list[int]:
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=retry_empty_after_hours)
+        cutoff = datetime.now(UTC) - timedelta(hours=retry_empty_after_hours)
 
         needs_mapping_ids = set(
-            self.session.execute(select(AssetORM.id).where(AssetORM.needs_mapping.is_(True))).scalars()
+            self.session.execute(
+                select(AssetORM.id).where(AssetORM.needs_mapping.is_(True))
+            ).scalars()
         )
         if not needs_mapping_ids:
             return []
 
-        open_resolutions = self.session.execute(
-            select(AssetResolutionORM).where(
-                AssetResolutionORM.asset_id.in_(needs_mapping_ids),
-                AssetResolutionORM.status != ResolutionStatus.SUPERSEDED.value,
+        open_resolutions = (
+            self.session.execute(
+                select(AssetResolutionORM).where(
+                    AssetResolutionORM.asset_id.in_(needs_mapping_ids),
+                    AssetResolutionORM.status != ResolutionStatus.SUPERSEDED.value,
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         open_by_asset = {r.asset_id: r for r in open_resolutions}
 
         result = []
@@ -972,37 +1036,80 @@ class SqlNoteRepo(NoteRepo):
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def add(self, agent: str, scope: str, title: str, body: str, account_id: int | None = None) -> int:
+    def add(
+        self, agent: str, scope: str, title: str, body: str, account_id: int | None = None
+    ) -> int:
         row = AiNoteORM(agent=agent, scope=scope, account_id=account_id, title=title, body=body)
         self.session.add(row)
         self.session.flush()
         return row.id
 
-    def list(self, scope: str | None = None, since: datetime | None = None, limit: int = 20) -> list[Note]:
+    def list(
+        self, scope: str | None = None, since: datetime | None = None, limit: int = 20
+    ) -> list[Note]:
         stmt = select(AiNoteORM)
         if scope is not None:
             stmt = stmt.where(AiNoteORM.scope == scope)
         if since is not None:
             stmt = stmt.where(AiNoteORM.created_at >= since)
-        rows = self.session.execute(stmt.order_by(AiNoteORM.created_at.desc()).limit(limit)).scalars()
+        rows = self.session.execute(
+            stmt.order_by(AiNoteORM.created_at.desc()).limit(limit)
+        ).scalars()
         return [_note_from_orm(r) for r in rows]
 
     def dismiss(self, note_id: int) -> None:
         row = self.session.get(AiNoteORM, note_id)
         if row is None:
             return
-        row.dismissed_at = datetime.now(timezone.utc)
+        row.dismissed_at = datetime.now(UTC)
+        self.session.flush()
+
+
+class SqlAssetIntelCacheRepo(AssetIntelCacheRepo):
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get(self, symbol: str, kind: str) -> CachedIntel | None:
+        row = self.session.execute(
+            select(AssetIntelCacheORM).where(
+                AssetIntelCacheORM.symbol == symbol, AssetIntelCacheORM.kind == kind
+            )
+        ).scalar_one_or_none()
+        return (
+            CachedIntel(payload=row.payload, fetched_at=row.fetched_at) if row is not None else None
+        )
+
+    def put(self, symbol: str, kind: str, payload: dict | list[dict]) -> None:
+        existing = self.session.execute(
+            select(AssetIntelCacheORM).where(
+                AssetIntelCacheORM.symbol == symbol, AssetIntelCacheORM.kind == kind
+            )
+        ).scalar_one_or_none()
+        now = datetime.now(UTC)
+        if existing is not None:
+            existing.payload = payload
+            existing.fetched_at = now
+        else:
+            self.session.add(
+                AssetIntelCacheORM(symbol=symbol, kind=kind, payload=payload, fetched_at=now)
+            )
         self.session.flush()
 
 
 def _session_from_orm(row: ChatSessionORM) -> ChatSession:
-    return ChatSession(id=row.id, title=row.title, created_at=row.created_at, updated_at=row.updated_at)
+    return ChatSession(
+        id=row.id, title=row.title, created_at=row.created_at, updated_at=row.updated_at
+    )
 
 
 def _message_from_orm(row: ChatMessageORM) -> ChatMessage:
     return ChatMessage(
-        id=row.id, session_id=row.session_id, role=row.role, content=row.content,
-        tool_calls=row.tool_calls, created_at=row.created_at,
+        id=row.id,
+        session_id=row.session_id,
+        role=row.role,
+        content=row.content,
+        tool_calls=row.tool_calls,
+        created_at=row.created_at,
     )
 
 
@@ -1044,11 +1151,15 @@ class SqlChatRepo(ChatRepo):
         row = self.session.get(ChatSessionORM, session_id)
         if row is None:
             return
-        row.updated_at = as_of or datetime.now(timezone.utc)
+        row.updated_at = as_of or datetime.now(UTC)
         self.session.flush()
 
-    def add_message(self, session_id: int, role: str, content: str, tool_calls: list[dict] | None = None) -> int:
-        row = ChatMessageORM(session_id=session_id, role=role, content=content, tool_calls=tool_calls)
+    def add_message(
+        self, session_id: int, role: str, content: str, tool_calls: list[dict] | None = None
+    ) -> int:
+        row = ChatMessageORM(
+            session_id=session_id, role=role, content=content, tool_calls=tool_calls
+        )
         self.session.add(row)
         self.session.flush()
         return row.id
@@ -1077,7 +1188,9 @@ def _quant_run_from_orm(row: QuantRunORM) -> QuantRunRecord:
         # write time, same "old rows keep their old shape" reasoning as
         # the fp1 import fingerprint recipe (see backend/AGENTS.md).
         within = row.backtest.get("within_band", row.backtest.get("within_90pct_band"))
-        mean_abs = row.backtest.get("mean_abs_pct_error_median", row.backtest.get("mean_abs_pct_error_p50"))
+        mean_abs = row.backtest.get(
+            "mean_abs_pct_error_median", row.backtest.get("mean_abs_pct_error_p50")
+        )
         backtest = BacktestResult(
             covered_days=row.backtest["covered_days"],
             within_band=within,
@@ -1173,7 +1286,9 @@ class SqlToolIndexRepo(ToolIndexRepo):
                 ToolIndexORM.content_hash,
             )
         ).all()
-        return {(r.server_module, r.tool_name, r.doc_kind, r.doc_text): r.content_hash for r in rows}
+        return {
+            (r.server_module, r.tool_name, r.doc_kind, r.doc_text): r.content_hash for r in rows
+        }
 
     def upsert_documents(
         self,
@@ -1198,7 +1313,7 @@ class SqlToolIndexRepo(ToolIndexRepo):
                 existing.embedding_model = embedding_model
                 existing.token_estimate = token_estimate
                 existing.embedding = embedding
-                existing.updated_at = datetime.now(timezone.utc)
+                existing.updated_at = datetime.now(UTC)
             else:
                 self.session.add(
                     ToolIndexORM(
@@ -1245,7 +1360,9 @@ class SqlToolIndexRepo(ToolIndexRepo):
             .limit(limit * self._OVERFETCH)
         )
         if candidate_keys is not None:
-            stmt = stmt.where(tuple_(ToolIndexORM.server_module, ToolIndexORM.tool_name).in_(list(candidate_keys)))
+            stmt = stmt.where(
+                tuple_(ToolIndexORM.server_module, ToolIndexORM.tool_name).in_(list(candidate_keys))
+            )
         rows = self.session.execute(stmt).all()
         return _best_per_tool(rows, limit)
 
@@ -1266,7 +1383,9 @@ class SqlToolIndexRepo(ToolIndexRepo):
             .limit(limit * self._OVERFETCH)
         )
         if candidate_keys is not None:
-            stmt = stmt.where(tuple_(ToolIndexORM.server_module, ToolIndexORM.tool_name).in_(list(candidate_keys)))
+            stmt = stmt.where(
+                tuple_(ToolIndexORM.server_module, ToolIndexORM.tool_name).in_(list(candidate_keys))
+            )
         rows = self.session.execute(stmt).all()
         return _best_per_tool(rows, limit)
 
@@ -1277,5 +1396,7 @@ def _best_per_tool(rows, limit: int) -> list[RetrievalCandidate]:
         key = (row.server_module, row.tool_name)
         score = float(row.score)
         if key not in best or score > best[key].score:
-            best[key] = RetrievalCandidate(key=key, score=score, doc_text=row.doc_text, token_estimate=row.token_estimate)
+            best[key] = RetrievalCandidate(
+                key=key, score=score, doc_text=row.doc_text, token_estimate=row.token_estimate
+            )
     return sorted(best.values(), key=lambda c: c.score, reverse=True)[:limit]

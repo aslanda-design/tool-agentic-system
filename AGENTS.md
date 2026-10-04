@@ -219,9 +219,26 @@ Paper trading port is 7497, live is 7496.
       crash": GBM's simulated percentiles are checked against the exact
       lognormal quantile formula, and Heston at `ξ=0, v0=θ` is checked
       against that same formula (a structural fact — Heston collapses to
-      GBM there), plus a real Postgres + HTTP round trip end to end. Rough
-      Heston remains designed but not built — see `plans/quant_lab.md`
-      section 9.3 (no maintained free rough-vol library).
+      GBM there), plus a real Postgres + HTTP round trip end to end.
+- [x] Quant Lab, Phase 9 of `plans/quant_lab_phase9_rough_heston.md`: rough
+      Heston (stochastic volatility with a fractional, long-memory kernel
+      instead of Heston's Markovian one — volatility that's rougher/burstier
+      than standard models capture) — the hardest of the originally-unbuilt
+      models, built after Phase 10 (Hawkes, below) by explicit reordering.
+      `κ`/`ξ`/`ρ`/factor count stay literature-typical sliders like plain
+      Heston; `H` (the roughness/Hurst exponent) is genuinely estimated from
+      the asset's own history (`domain/quant/roughness.py`), and the
+      fractional kernel is approximated by a small multi-factor Markovian
+      system fit by quadrature (`domain/quant/rough_kernel.py`) so
+      simulation stays a standard multi-factor SDE step, no fractional
+      calculus at runtime. Two real, empirically-discovered tuning
+      constants (`GAMMA_MIN_SCALE`, `RV_WINDOW`) replaced this plan's
+      original back-of-envelope values after synthetic round-trip tests
+      showed the originals converging to the wrong answer — see the plan's
+      "Implementation notes" for the full account of why, not just that
+      they changed. Verified against the same Heston-collapse closed-form
+      chain (rough Heston → Heston at `H→0.5`-adjacent settings) plus 27
+      new tests alongside the existing 465.
 - [x] Quant Lab, Phase 10 of `plans/quant_lab_phase10_hawkes.md`: Hawkes
       jump-diffusion (GBM plus a self-exciting, Hawkes-clustered jump
       component — "a shock makes another shock more likely for a while,
@@ -263,3 +280,46 @@ Paper trading port is 7497, live is 7496.
       MCP tool to ship `example_queries` in
       `ai/common/tool_rag/examples/<server>.json`, enforced by
       `backend/tests/test_tool_rag_examples_consistency.py`.
+- [x] Market Intel, Phases 1-3 of `plans/market_intel.md`: the first
+      external (non-portfolio) data sources — a `market_intel` MCP server
+      (`backend/ai/mcp_servers/market_intel/`, 4 tools: `get_asset_news`,
+      `get_filing_events`, `get_asset_sentiment`, `get_macro_headlines`)
+      wired into `portfolio_assistant`, behind `MARKET_INTEL_ENABLED`
+      (`false` by default). `get_asset_news`/`get_filing_events` need zero
+      API keys (`YFinanceNewsAdapter` — Yahoo's own headline feed, already
+      a dependency; `SecEdgarAdapter` — SEC EDGAR's official, keyless
+      filings API, needs `SEC_EDGAR_USER_AGENT` set per SEC's fair-access
+      policy). `get_asset_sentiment` fuses two independent sources —
+      `FinnhubSentimentAdapter` (free tier, needs `FINNHUB_API_KEY`) and
+      `StockTwitsSentimentAdapter` (public, keyless, but needs a
+      descriptive `User-Agent` — its default-UA requests 403, confirmed
+      live) — via `domain/market_intel.py::fuse_sentiment`'s
+      agreement/divergence judgment call, not just an average.
+      `get_macro_headlines` (`GdeltAdapter`, free/keyless, 1 req/5s
+      fair-use limit) covers sector/macro questions with no single ticker
+      — no per-article tone score despite this plan's original
+      assumption (confirmed live; GDELT only exposes tone as a separate
+      aggregate mode), and its one free-text argument goes through
+      `domain/market_intel.py::validate_topic` as an extra egress check.
+      All four read through the same `asset_intel_cache` table
+      (migrations `0007`/`0008`, `MARKET_INTEL_CACHE_MINUTES`). The
+      egress guarantee (external data in, nothing internal out — root
+      `AGENTS.md` §"Security rules") is structural, not just reviewed:
+      every tool takes a bare `symbol`/`topic` string and nothing else,
+      never an `asset_id`, never called in a loop over the user's own
+      holdings — codified as `backend/ai/AGENTS.md` rule 13. A REST
+      counterpart (`GET /api/market-intel/assets/{symbol}`, backed by a
+      new `GetAssetIntelUseCase.get_all`) feeds a `AssetDetailPage` card
+      that only fetches on an explicit "Load"/"Refresh" click — never on
+      page load — the UI-level enforcement of the same "user-triggered,
+      one asset at a time" principle. Verified with real, live calls (not
+      just mocks): all four sources round-tripped against real Yahoo
+      Finance, real SEC EDGAR, real StockTwits, and (once, before a
+      shared-sandbox-IP rate limit made further checks unreliable) real
+      GDELT, for AAPL/a real macro query (Finnhub only verified against a
+      fixture — no real key on hand this session); the REST route was
+      verified against the actual running Docker backend
+      (`docker compose up --build`) after adding `MARKET_INTEL_ENABLED=true`
+      to `backend/.env`, and the frontend's rebuilt bundle was confirmed
+      to contain the new card's code. Not verified: an actual browser
+      click-through (Claude in Chrome wasn't connected this session).

@@ -38,7 +38,11 @@ def build_column_map(headers: list[str], aliases: dict[str, list[str]]) -> Colum
             mapped[field] = winner
         else:
             unmapped.append(field)
-    return ColumnMap(mapped=mapped, unmapped=unmapped, detected_headers=[normalize_header(h) for h in headers if h])
+    return ColumnMap(
+        mapped=mapped,
+        unmapped=unmapped,
+        detected_headers=[normalize_header(h) for h in headers if h],
+    )
 
 
 def alias_tokens(aliases: dict[str, list[str]]) -> set[str]:

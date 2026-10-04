@@ -65,7 +65,10 @@ class GetAssetChartUseCase:
         else:
             start = today - timedelta(days=RANGE_DAYS.get(range_key, 365))
         bars = self.market_data.get_history(symbol, start, today)
-        return [DailyBarDTO(date=b.date, open=b.open, high=b.high, low=b.low, close=b.close) for b in bars]
+        return [
+            DailyBarDTO(date=b.date, open=b.open, high=b.high, low=b.low, close=b.close)
+            for b in bars
+        ]
 
     def get_intraday(self, asset_id: int, granularity: str) -> list[IntradayBarDTO]:
         if granularity not in INTRADAY_GRANULARITIES:
@@ -75,5 +78,8 @@ class GetAssetChartUseCase:
             return []
         bars = self.market_data.get_intraday(symbol, granularity)
         return [
-            IntradayBarDTO(timestamp=b.timestamp, open=b.open, high=b.high, low=b.low, close=b.close) for b in bars
+            IntradayBarDTO(
+                timestamp=b.timestamp, open=b.open, high=b.high, low=b.low, close=b.close
+            )
+            for b in bars
         ]

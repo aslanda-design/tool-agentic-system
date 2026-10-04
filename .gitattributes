@@ -1,0 +1,14 @@
+# Normalize line endings to LF in the repository regardless of a
+# contributor's local core.autocrlf — this app is developed on Windows but
+# CI/most tooling (ruff, prettier, git diffs) expects LF, and without this
+# a Windows checkout's CRLF conversion fights ruff format's LF output on
+# every run.
+* text=auto eol=lf
+
+# Never touch line endings in files where they're meaningful/binary.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg text eol=lf

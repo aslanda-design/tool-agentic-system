@@ -8,7 +8,7 @@ from app.ports.repositories import AssetRepo, MarketDataRepo, PortfolioRepo
 
 from .dto import AssetDetailDTO, PositionDTO
 
-ZERO = Decimal("0")
+ZERO = Decimal(0)
 
 
 class QueryAssetUseCase:
@@ -31,7 +31,11 @@ class QueryAssetUseCase:
         quote = self.market_data_repo.get_quote(asset_id)
         # Fall back to the latest price bar so a quote outage doesn't blank out
         # a page that still has real historical price data to show.
-        last_price = quote["price"] if quote else self.market_data_repo.get_price_on_or_before(asset_id, date.today())
+        last_price = (
+            quote["price"]
+            if quote
+            else self.market_data_repo.get_price_on_or_before(asset_id, date.today())
+        )
 
         position = None
         rows = [r for r in self.portfolio_repo.list_positions() if r["asset_id"] == asset_id]

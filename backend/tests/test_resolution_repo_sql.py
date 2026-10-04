@@ -32,7 +32,11 @@ def db():
 
 def _make_asset(db, symbol="test-resolution-repo-1"):
     return SqlAssetRepo(db).create(
-        symbol=symbol, name="Test", asset_class=AssetClass.EQUITY, currency="EUR", needs_mapping=True
+        symbol=symbol,
+        name="Test",
+        asset_class=AssetClass.EQUITY,
+        currency="EUR",
+        needs_mapping=True,
     )
 
 
@@ -73,8 +77,17 @@ def test_create_and_get_round_trips_context_and_candidates(db):
     repo = SqlResolutionRepo(db)
     candidates = [_candidate("VUSA.L", 79), _candidate("VUSA.DE", 30)]
 
-    rid = repo.create(_ctx(asset.id), ResolutionStatus.NEEDS_REVIEW, None, "no candidate scored high enough", "rules-v1", candidates)
-    assert candidates[0].id is not None and candidates[1].id is not None  # ids backfilled onto the input objects
+    rid = repo.create(
+        _ctx(asset.id),
+        ResolutionStatus.NEEDS_REVIEW,
+        None,
+        "no candidate scored high enough",
+        "rules-v1",
+        candidates,
+    )
+    assert (
+        candidates[0].id is not None and candidates[1].id is not None
+    )  # ids backfilled onto the input objects
 
     fetched = repo.get(rid)
     assert fetched.asset_id == asset.id
@@ -95,7 +108,9 @@ def test_get_open_for_asset_and_supersede(db):
     assert repo.get(first_id).status == ResolutionStatus.SUPERSEDED
     assert repo.get_open_for_asset(asset.id) is None
 
-    second_id = repo.create(_ctx(asset.id), ResolutionStatus.AUTO_ACCEPTED, "rules", "", "rules-v1", [])
+    second_id = repo.create(
+        _ctx(asset.id), ResolutionStatus.AUTO_ACCEPTED, "rules", "", "rules-v1", []
+    )
     assert repo.get_open_for_asset(asset.id).id == second_id
 
 
@@ -103,7 +118,9 @@ def test_select_candidate_marks_exactly_one(db):
     asset = _make_asset(db, "test-resolution-repo-3")
     repo = SqlResolutionRepo(db)
     candidates = [_candidate("A.L", 90), _candidate("B.L", 80)]
-    rid = repo.create(_ctx(asset.id), ResolutionStatus.NEEDS_AGENT, None, "", "rules-v1", candidates)
+    rid = repo.create(
+        _ctx(asset.id), ResolutionStatus.NEEDS_AGENT, None, "", "rules-v1", candidates
+    )
 
     repo.select_candidate(rid, candidates[0].id)
     fetched = repo.get(rid)
@@ -119,7 +136,9 @@ def test_select_candidate_marks_exactly_one(db):
 def test_add_candidate_onto_existing_resolution(db):
     asset = _make_asset(db, "test-resolution-repo-4")
     repo = SqlResolutionRepo(db)
-    rid = repo.create(_ctx(asset.id), ResolutionStatus.NEEDS_AGENT, None, "", "rules-v1", [_candidate("A.L", 60)])
+    rid = repo.create(
+        _ctx(asset.id), ResolutionStatus.NEEDS_AGENT, None, "", "rules-v1", [_candidate("A.L", 60)]
+    )
 
     new_candidate = _candidate("C.L", 95)
     new_id = repo.add_candidate(rid, new_candidate)
@@ -132,7 +151,9 @@ def test_add_candidate_onto_existing_resolution(db):
 def test_set_status_and_list_by_status(db):
     asset = _make_asset(db, "test-resolution-repo-5")
     repo = SqlResolutionRepo(db)
-    rid = repo.create(_ctx(asset.id), ResolutionStatus.NEEDS_REVIEW, None, "no candidates", "rules-v1", [])
+    rid = repo.create(
+        _ctx(asset.id), ResolutionStatus.NEEDS_REVIEW, None, "no candidates", "rules-v1", []
+    )
 
     open_ones = repo.list_by_status([ResolutionStatus.NEEDS_REVIEW, ResolutionStatus.NEEDS_AGENT])
     assert rid in {r.id for r in open_ones}
@@ -159,7 +180,9 @@ def test_add_agent_run(db):
             model="qwen3:8b",
             status="SAVED",
             steps=3,
-            tool_calls=[{"name": "validate_listing", "arguments": {"symbol": "VUSA.L"}, "ok": True}],
+            tool_calls=[
+                {"name": "validate_listing", "arguments": {"symbol": "VUSA.L"}, "ok": True}
+            ],
             final_message="Chose VUSA.L — same currency and exchange as the broker.",
             prompt_tokens=512,
             completion_tokens=64,
@@ -183,7 +206,9 @@ def test_list_assets_to_resolve_includes_needs_mapping_without_open_resolution(d
 def test_list_assets_to_resolve_retries_stale_empty_review(db):
     asset = _make_asset(db, "test-resolution-repo-8")
     repo = SqlResolutionRepo(db)
-    repo.create(_ctx(asset.id), ResolutionStatus.NEEDS_REVIEW, None, "no candidates found", "rules-v1", [])
+    repo.create(
+        _ctx(asset.id), ResolutionStatus.NEEDS_REVIEW, None, "no candidates found", "rules-v1", []
+    )
 
     # freshly created empty NEEDS_REVIEW — too soon to retry
     assert asset.id not in repo.list_assets_to_resolve(retry_empty_after_hours=24)
@@ -195,6 +220,10 @@ def test_list_assets_to_resolve_excludes_mapped_assets(db):
     asset_repo = SqlAssetRepo(db)
     resolution_repo = SqlResolutionRepo(db)
     asset = asset_repo.create(
-        symbol="test-resolution-repo-9", name="Test", asset_class=AssetClass.EQUITY, currency="EUR", needs_mapping=False
+        symbol="test-resolution-repo-9",
+        name="Test",
+        asset_class=AssetClass.EQUITY,
+        currency="EUR",
+        needs_mapping=False,
     )
     assert asset.id not in resolution_repo.list_assets_to_resolve()

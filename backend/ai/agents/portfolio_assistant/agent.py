@@ -36,27 +36,50 @@ from app.domain.listings import AgentRunRecord
 
 AGENT_NAME = "portfolio_assistant"
 
-# The model's tool allowlist, curated to <=10 — small local models get
-# noticeably worse with more (see backend/ai/AGENTS.md). Read-only tools
-# only, spread across three servers, which is exactly why this agent needs
-# open_mcp_servers (a single MCP server's own tool_names filter can't
-# straddle three of them). Adding a new capability later — a future
-# quantitative-signals server, say — is a one-line addition to this dict;
-# nothing else about this agent changes.
+# The model's tool allowlist — small local models get noticeably worse
+# with more tools (see backend/ai/AGENTS.md), so this is kept as small as
+# each new capability allows. Read-only tools only, spread across several
+# servers, which is exactly why this agent needs open_mcp_servers (a single
+# MCP server's own tool_names filter can't straddle more than one). Adding
+# a new capability later is a one-line addition to this dict; nothing else
+# about this agent changes.
 #
-# Doubles as this agent's tool-RAG *ceiling* (plans/tool_rag.md section
-# 4.6) once TOOL_RAG_ENABLED=true: the superset retrieval is only ever
-# allowed to narrow *within*, never grow beyond — the read-only/advisory
-# boundary below is exactly as binding with retrieval on as it is today
-# with it off.
+# At 16 tools this has grown past TOOL_RAG_SKIP_BELOW_TOOL_COUNT (12,
+# app/config.py) — the point this whole ceiling doubles as a genuine
+# tool-RAG *retrieval* ceiling rather than always being exposed in full
+# (plans/tool_rag.md section 4.6): with TOOL_RAG_ENABLED=true, retrieval
+# now actually narrows *within* this dict per turn; it can never grow
+# beyond it — the read-only/advisory boundary below is exactly as binding
+# with retrieval on as it is with it off (default).
 SERVERS: dict[str, set[str] | None] = {
-    "ai.mcp_servers.portfolio": {"get_portfolio_summary", "list_positions", "get_allocation", "get_value_history"},
+    "ai.mcp_servers.portfolio": {
+        "get_portfolio_summary",
+        "list_positions",
+        "get_allocation",
+        "get_value_history",
+    },
     "ai.mcp_servers.market_data": {"get_asset"},
-    "ai.mcp_servers.analytics": {"get_returns", "get_concentration", "get_currency_exposure", "get_drawdown"},
+    "ai.mcp_servers.analytics": {
+        "get_returns",
+        "get_concentration",
+        "get_currency_exposure",
+        "get_drawdown",
+    },
     # Read-only/advisory only (plans/quant_lab.md section 0.2) — this agent
     # can list models, recommend one, and explain a run the user already
     # made on the Quant Lab page, but never trigger a simulation itself.
     "ai.mcp_servers.quant": {"list_models", "recommend_model", "explain_run"},
+    # External news/filings for one asset the user asked about — see
+    # plans/market_intel.md. Both tools take a bare symbol and nothing
+    # else, off entirely unless MARKET_INTEL_ENABLED=true
+    # (backend/ai/AGENTS.md rule 13), and are never called in a loop over
+    # the user's own holdings.
+    "ai.mcp_servers.market_intel": {
+        "get_asset_news",
+        "get_filing_events",
+        "get_asset_sentiment",
+        "get_macro_headlines",
+    },
 }
 
 # How many past chat_messages rows to replay as session memory — roughly
@@ -122,7 +145,9 @@ class PortfolioAssistantAgent:
                 self._run_loop(history, user_message), timeout=settings.agent_timeout_seconds
             )
         except TimeoutError:
-            result = AgentRunResult(status="TIMEOUT", steps=0, error="agent run exceeded AGENT_TIMEOUT_SECONDS")
+            result = AgentRunResult(
+                status="TIMEOUT", steps=0, error="agent run exceeded AGENT_TIMEOUT_SECONDS"
+            )
         except Exception as exc:  # noqa: BLE001 — deliberate: the caller (a chat request) must
             # never crash because the model or an MCP subprocess misbehaved; the user still gets
             # a reply (a fallback message, persisted like any other) — see security_resolver's
@@ -132,7 +157,9 @@ class PortfolioAssistantAgent:
         self._record_run(result, tool_retrieval)
         return result
 
-    async def _run_loop(self, history: list[dict], user_message: str) -> tuple[AgentRunResult, dict | None]:
+    async def _run_loop(
+        self, history: list[dict], user_message: str
+    ) -> tuple[AgentRunResult, dict | None]:
         ceiling, tool_retrieval = await _select_tools(user_message)
         async with open_mcp_servers(ceiling) as session:
             result = await run_agent(
@@ -160,13 +187,21 @@ class PortfolioAssistantAgent:
         finally:
             db.close()
 
-    def _persist_turn(self, session_id: int, user_message: str, result: AgentRunResult, is_first_turn: bool) -> None:
+    def _persist_turn(
+        self, session_id: int, user_message: str, result: AgentRunResult, is_first_turn: bool
+    ) -> None:
         db = SessionLocal()
         try:
             repo = chat_repo(db)
             repo.add_message(session_id, "user", user_message)
-            reply_text = result.final_message if result.status == "REPLIED" and result.final_message else _fallback_reply(result)
-            repo.add_message(session_id, "assistant", reply_text, tool_calls=result.tool_calls or None)
+            reply_text = (
+                result.final_message
+                if result.status == "REPLIED" and result.final_message
+                else _fallback_reply(result)
+            )
+            repo.add_message(
+                session_id, "assistant", reply_text, tool_calls=result.tool_calls or None
+            )
             if is_first_turn:
                 repo.rename_session(session_id, _auto_title(user_message))
             repo.touch_session(session_id)

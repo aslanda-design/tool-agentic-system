@@ -163,7 +163,9 @@ def parse_myinvestor_file(file_bytes: bytes) -> ParsedStatement:
             currency = "EUR"
             warnings.append("currency not found in file — defaulted to EUR")
 
-        price_value = numbers.normalize_decimal(_cell(raw, mapped, "price")) if "price" in mapped else None
+        price_value = (
+            numbers.normalize_decimal(_cell(raw, mapped, "price")) if "price" in mapped else None
+        )
         if price_value is None and amount_raw and quantity_value not in (None, "0"):
             amount_value = numbers.normalize_decimal(amount_raw)
             if amount_value is not None:
@@ -173,11 +175,15 @@ def parse_myinvestor_file(file_bytes: bytes) -> ParsedStatement:
                             Decimal("1E-8"), rounding=ROUND_HALF_UP
                         )
                     )
-                    warnings.append("unit price derived from amount / quantity — not broker-reported")
+                    warnings.append(
+                        "unit price derived from amount / quantity — not broker-reported"
+                    )
                 except (InvalidOperation, ZeroDivisionError):
                     price_value = None
         if price_value is None:
-            errors.append("could not determine a unit price (no price column, and amount/quantity unavailable)")
+            errors.append(
+                "could not determine a unit price (no price column, and amount/quantity unavailable)"
+            )
 
         if infer_buy:
             txn_type = "BUY"
@@ -210,7 +216,9 @@ def parse_myinvestor_file(file_bytes: bytes) -> ParsedStatement:
                 if len(candidate) <= 100:
                     external_id = candidate
                 else:
-                    warnings.append("operation reference too long — using a content fingerprint instead")
+                    warnings.append(
+                        "operation reference too long — using a content fingerprint instead"
+                    )
 
         rows.append(
             ParsedRow(

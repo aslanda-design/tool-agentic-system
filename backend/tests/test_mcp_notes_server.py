@@ -19,7 +19,9 @@ def test_save_note_persists_and_echoes_back(monkeypatch):
     repo = FakeNoteRepo()
     monkeypatch.setattr(save_note_tool, "note_repo", lambda db: repo)
 
-    result = save_note_tool.save_note("weekly_report", "portfolio", "Weekly summary", "Nothing to report.")
+    result = save_note_tool.save_note(
+        "weekly_report", "portfolio", "Weekly summary", "Nothing to report."
+    )
 
     assert result["title"] == "Weekly summary"
     assert result["id"] is not None
@@ -33,7 +35,9 @@ def test_save_note_with_account_scope_stores_the_account_id(monkeypatch):
     repo = FakeNoteRepo()
     monkeypatch.setattr(save_note_tool, "note_repo", lambda db: repo)
 
-    save_note_tool.save_note("import_reviewer", "account", "Mispriced trade", "IB1T looks off.", account_id=7)
+    save_note_tool.save_note(
+        "import_reviewer", "account", "Mispriced trade", "IB1T looks off.", account_id=7
+    )
 
     saved = repo.list(scope="account")
     assert saved[0].account_id == 7
@@ -70,7 +74,9 @@ def test_server_call_tool_round_trips_through_the_registered_function(monkeypatc
     monkeypatch.setattr(save_note_tool, "note_repo", lambda db: repo)
 
     result = asyncio.run(
-        server.mcp.call_tool("save_note", {"agent": "weekly_report", "scope": "portfolio", "title": "t", "body": "b"})
+        server.mcp.call_tool(
+            "save_note", {"agent": "weekly_report", "scope": "portfolio", "title": "t", "body": "b"}
+        )
     )
 
     assert result.is_error is False

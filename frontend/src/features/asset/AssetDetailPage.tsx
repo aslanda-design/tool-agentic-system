@@ -17,12 +17,13 @@ import {
   useAsset,
   useAssetHistory,
   useAssetIntraday,
+  useAssetMarketIntel,
   useDeleteAsset,
   usePosition,
   useUpdateAsset,
 } from '../../lib/api/hooks'
 import { formatDate } from '../../lib/format'
-import type { AssetDetail, Granularity } from '../../lib/api/types'
+import type { AssetDetail, Granularity, MarketIntelSentiment } from '../../lib/api/types'
 
 const RANGES = ['1M', '3M', 'YTD', '1Y', '5Y', 'ALL']
 const GRANULARITY_LABELS: Record<Granularity, string> = { '1d': 'Daily', '1h': 'Hourly', '1m': 'Minute' }
@@ -190,8 +191,133 @@ export function AssetDetailPage() {
         </Card>
       )}
 
+      <MarketIntelCard symbol={a.symbol} />
+
       <EditAssetCard asset={a} />
     </div>
+  )
+}
+
+const SENTIMENT_TONE: Record<MarketIntelSentiment['agreement'], 'positive' | 'negative' | 'neutral' | 'accent'> = {
+  aligned: 'positive',
+  diverging: 'accent',
+  single_source: 'neutral',
+  no_data: 'neutral',
+}
+
+const SENTIMENT_AGREEMENT_LABEL: Record<MarketIntelSentiment['agreement'], string> = {
+  aligned: 'Sources agree',
+  diverging: 'Sources disagree',
+  single_source: 'One source',
+  no_data: 'No sentiment data',
+}
+
+const SOURCE_LABEL_TONE: Record<string, 'positive' | 'negative' | 'neutral'> = {
+  bullish: 'positive',
+  bearish: 'negative',
+  neutral: 'neutral',
+}
+
+function MarketIntelCard({ symbol }: { symbol: string }) {
+  const intel = useAssetMarketIntel(symbol)
+  const hasLoaded = intel.data !== undefined
+
+  return (
+    <Card className="mt-4">
+      <CardHeader className="flex flex-wrap items-center justify-between gap-2">
+        <CardTitle>News, filings &amp; sentiment</CardTitle>
+        {hasLoaded && (
+          <Button variant="ghost" disabled={intel.isFetching} onClick={() => intel.refetch()}>
+            {intel.isFetching ? 'Refreshing…' : 'Refresh'}
+          </Button>
+        )}
+      </CardHeader>
+      <CardBody className="space-y-4">
+        {!hasLoaded && (
+          <>
+            <p className="text-xs text-muted">
+              Pulls recent headlines (Yahoo Finance), SEC filings, and fused Finnhub/StockTwits sentiment for{' '}
+              {symbol} — only when you ask. Nothing about your holdings is ever sent; just this ticker.
+            </p>
+            <Button variant="secondary" disabled={intel.isFetching} onClick={() => intel.refetch()}>
+              {intel.isFetching ? 'Loading…' : 'Load news & sentiment'}
+            </Button>
+          </>
+        )}
+
+        {intel.isError && (
+          <p className="text-sm text-negative">
+            {(intel.error as Error).message || 'Market intel is not enabled for this app (MARKET_INTEL_ENABLED).'}
+          </p>
+        )}
+
+        {hasLoaded && intel.data && (
+          <>
+            <div>
+              <div className="mb-2 flex items-center gap-2">
+                <h3 className="text-sm font-medium text-text">Sentiment</h3>
+                <Badge tone={SENTIMENT_TONE[intel.data.sentiment.agreement]}>
+                  {SENTIMENT_AGREEMENT_LABEL[intel.data.sentiment.agreement]}
+                </Badge>
+              </div>
+              {intel.data.sentiment.sources.length === 0 ? (
+                <p className="text-sm text-muted">No sentiment data available right now.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {intel.data.sentiment.sources.map((s) => (
+                    <Badge key={s.source} tone={SOURCE_LABEL_TONE[s.label]}>
+                      {s.source}: {s.label} ({(s.score * 100).toFixed(0)}%)
+                      {s.sample_size != null && <span className="ml-1 text-subtle">· {s.sample_size}</span>}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <h3 className="mb-2 text-sm font-medium text-text">Recent filings</h3>
+              {intel.data.filings.length === 0 ? (
+                <p className="text-sm text-muted">No recent SEC filings (or this isn't a US-listed ticker).</p>
+              ) : (
+                <ul className="space-y-1">
+                  {intel.data.filings.map((f) => (
+                    <li key={f.url} className="text-sm">
+                      <Badge tone="neutral" className="mr-2">
+                        {f.form_type}
+                      </Badge>
+                      <a href={f.url} target="_blank" rel="noreferrer" className="text-text hover:text-accent">
+                        {f.title}
+                      </a>
+                      <span className="ml-2 text-xs text-subtle">{formatDate(f.filed_at)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div>
+              <h3 className="mb-2 text-sm font-medium text-text">Recent headlines</h3>
+              {intel.data.news.length === 0 ? (
+                <p className="text-sm text-muted">No recent headlines found.</p>
+              ) : (
+                <ul className="space-y-1">
+                  {intel.data.news.map((n) => (
+                    <li key={n.url} className="text-sm">
+                      <a href={n.url} target="_blank" rel="noreferrer" className="text-text hover:text-accent">
+                        {n.title}
+                      </a>
+                      <span className="ml-2 text-xs text-subtle">
+                        {n.publisher} · {formatDate(n.published_at)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </>
+        )}
+      </CardBody>
+    </Card>
   )
 }
 

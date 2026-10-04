@@ -16,7 +16,9 @@ from enum import StrEnum
 class ResolutionStatus(StrEnum):
     AUTO_ACCEPTED = "AUTO_ACCEPTED"  # rules picked a listing and applied it
     NEEDS_AGENT = "NEEDS_AGENT"  # rules found plausible candidates but can't decide
-    NEEDS_REVIEW = "NEEDS_REVIEW"  # needs a human: no candidates, conflict, or the agent flagged/failed
+    NEEDS_REVIEW = (
+        "NEEDS_REVIEW"  # needs a human: no candidates, conflict, or the agent flagged/failed
+    )
     RESOLVED_BY_AGENT = "RESOLVED_BY_AGENT"  # agent saved a candidate
     RESOLVED_BY_USER = "RESOLVED_BY_USER"  # user picked or typed a symbol
     SUPERSEDED = "SUPERSEDED"  # replaced by a newer resolution for the same asset
@@ -94,7 +96,9 @@ class Candidate:
     written to `resolution_candidates` (None until then)."""
 
     symbol: str
-    found_by: set[str] = field(default_factory=set)  # 'openfigi' | 'yahoo_isin' | 'yahoo_text' | 'agent' | 'user'
+    found_by: set[str] = field(
+        default_factory=set
+    )  # 'openfigi' | 'yahoo_isin' | 'yahoo_text' | 'agent' | 'user'
     info: ListingInfo | None = None
     mic: str | None = None
     figi: FigiListing | None = None

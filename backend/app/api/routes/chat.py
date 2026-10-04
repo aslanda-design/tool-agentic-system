@@ -55,12 +55,16 @@ def send_message(session_id: int, request: ChatMessageRequest, db: Session = Dep
     route only touches `chat_repo` to check the session exists first and
     to read the two rows the agent just wrote back for the response."""
     if not settings.agent_enabled:
-        raise HTTPException(status_code=409, detail="The portfolio assistant is not enabled (AGENT_ENABLED=false).")
+        raise HTTPException(
+            status_code=409, detail="The portfolio assistant is not enabled (AGENT_ENABLED=false)."
+        )
     if container.chat_repo(db).get_session(session_id) is None:
         raise HTTPException(status_code=404, detail="Chat session not found")
 
     result = container.build_portfolio_assistant_agent().send_message(session_id, request.message)
-    messages = container.chat_repo(db).list_messages(session_id, limit=2)  # the user + assistant rows just written
+    messages = container.chat_repo(db).list_messages(
+        session_id, limit=2
+    )  # the user + assistant rows just written
     return {
         "status": result.status,
         "reply": messages[-1].content if messages else "",

@@ -9,6 +9,7 @@ COPY app ./app
 COPY ai ./ai
 COPY migrations ./migrations
 COPY alembic.ini ./
+COPY scripts ./scripts
 
 RUN pip install --no-cache-dir ".[ai,quant]"
 

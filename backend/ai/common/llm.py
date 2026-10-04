@@ -61,7 +61,9 @@ class OllamaChatClient:
     client in a unit test can't reproduce this, since it never exercises
     the ollama package's own pydantic validation.)"""
 
-    def __init__(self, model: str, base_url: str, num_ctx: int = 8192, temperature: float = 0) -> None:
+    def __init__(
+        self, model: str, base_url: str, num_ctx: int = 8192, temperature: float = 0
+    ) -> None:
         self._model = model
         self._client = _OllamaSdkClient(host=base_url)
         self._num_ctx = num_ctx
@@ -124,7 +126,9 @@ class OpenAiCompatibleChatClient:
     translate in both directions — see their docstrings.
     """
 
-    def __init__(self, model: str, base_url: str, api_key: str = "", temperature: float = 0) -> None:
+    def __init__(
+        self, model: str, base_url: str, api_key: str = "", temperature: float = 0
+    ) -> None:
         self._model = model
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
@@ -139,7 +143,9 @@ class OpenAiCompatibleChatClient:
         }
         if tools:
             payload["tools"] = tools
-        response = httpx.post(f"{self._base_url}/chat/completions", json=payload, headers=headers, timeout=120)
+        response = httpx.post(
+            f"{self._base_url}/chat/completions", json=payload, headers=headers, timeout=120
+        )
         response.raise_for_status()
         return _from_wire_response(response.json())
 
@@ -168,7 +174,10 @@ def _to_wire_messages(messages: list[dict]) -> list[dict]:
                         {
                             "id": call_id,
                             "type": "function",
-                            "function": {"name": call["name"], "arguments": json.dumps(call["arguments"])},
+                            "function": {
+                                "name": call["name"],
+                                "arguments": json.dumps(call["arguments"]),
+                            },
                         }
                         for call_id, call in zip(ids, message["tool_calls"], strict=True)
                     ],
@@ -177,7 +186,9 @@ def _to_wire_messages(messages: list[dict]) -> list[dict]:
             pending_ids = list(ids)
         elif role == "tool":
             call_id = pending_ids.pop(0) if pending_ids else None
-            wire.append({"role": "tool", "tool_call_id": call_id, "content": message.get("content", "")})
+            wire.append(
+                {"role": "tool", "tool_call_id": call_id, "content": message.get("content", "")}
+            )
         else:
             wire.append({"role": role, "content": message.get("content", "")})
     return wire
@@ -189,7 +200,10 @@ def _from_wire_response(data: dict) -> dict[str, Any]:
     doesn't need (it re-derives ids from position on the next turn)."""
     message = data["choices"][0]["message"]
     tool_calls = [
-        {"name": call["function"]["name"], "arguments": json.loads(call["function"]["arguments"] or "{}")}
+        {
+            "name": call["function"]["name"],
+            "arguments": json.loads(call["function"]["arguments"] or "{}"),
+        }
         for call in (message.get("tool_calls") or [])
     ]
     usage = data.get("usage") or {}
@@ -216,5 +230,7 @@ def build_chat_client(
     if provider == "ollama":
         return OllamaChatClient(model=model, base_url=base_url, num_ctx=settings.agent_num_ctx)
     if provider == "openai":
-        return OpenAiCompatibleChatClient(model=model, base_url=base_url, api_key=api_key or settings.agent_api_key)
+        return OpenAiCompatibleChatClient(
+            model=model, base_url=base_url, api_key=api_key or settings.agent_api_key
+        )
     raise ValueError(f"Unknown AGENT_PROVIDER {provider!r} (expected 'ollama' or 'openai')")

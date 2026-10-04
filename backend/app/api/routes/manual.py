@@ -3,7 +3,11 @@ from sqlalchemy.orm import Session
 
 from app import container
 from app.adapters.persistence.session import get_db
-from app.api.schemas import ManualHoldingRequest, ManualTransactionRequest, ManualTransactionUpdateRequest
+from app.api.schemas import (
+    ManualHoldingRequest,
+    ManualTransactionRequest,
+    ManualTransactionUpdateRequest,
+)
 from app.domain.models import TransactionType
 
 router = APIRouter(prefix="/manual", tags=["manual"])
@@ -49,7 +53,9 @@ def add_transaction(request: ManualTransactionRequest, db: Session = Depends(get
 
 
 @router.patch("/transactions/{transaction_id}")
-def update_transaction(transaction_id: int, request: ManualTransactionUpdateRequest, db: Session = Depends(get_db)):
+def update_transaction(
+    transaction_id: int, request: ManualTransactionUpdateRequest, db: Session = Depends(get_db)
+):
     fields = {k: v for k, v in request.model_dump().items() if v is not None}
     container.build_manual_entry_use_case(db).update_transaction(transaction_id, **fields)
     db.commit()

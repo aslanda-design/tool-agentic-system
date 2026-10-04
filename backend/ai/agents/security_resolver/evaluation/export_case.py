@@ -28,10 +28,18 @@ LOCAL_CASES_DIR = Path(__file__).with_name("cases_local")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("resolution_id", type=int)
-    parser.add_argument("--expected-tool", choices=["save_security_mapping", "flag_for_review"], required=True)
-    parser.add_argument("--expected-symbol", default=None, help="Required when --expected-tool is save_security_mapping.")
+    parser.add_argument(
+        "--expected-tool", choices=["save_security_mapping", "flag_for_review"], required=True
+    )
+    parser.add_argument(
+        "--expected-symbol",
+        default=None,
+        help="Required when --expected-tool is save_security_mapping.",
+    )
     parser.add_argument("--tags", nargs="*", default=[])
     args = parser.parse_args()
 
@@ -59,7 +67,9 @@ def main() -> None:
     out_path = LOCAL_CASES_DIR / f"{case_id}.json"
     out_path.write_text(json.dumps(case, indent=2), encoding="utf-8")
     print(f"Wrote {out_path}")
-    print("Fill in tool_fixtures by hand for anything the agent might look up beyond the given candidates.")
+    print(
+        "Fill in tool_fixtures by hand for anything the agent might look up beyond the given candidates."
+    )
 
 
 if __name__ == "__main__":

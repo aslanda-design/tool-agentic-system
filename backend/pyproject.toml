@@ -50,3 +50,26 @@ include = ["app*", "ai*"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint]
+ignore = [
+    # FastAPI's DI pattern is exactly `param: X = Depends(get_x)` — a
+    # function call in a default argument is the whole mechanism, not a
+    # mutable-default bug.
+    "B008",
+    # This app works in pure `date` (trading days / calendar days), never
+    # `datetime`, by domain convention — see backend/AGENTS.md. DTZ011/DTZ007
+    # want `date.today()`/`strptime()` replaced with a tz-aware datetime,
+    # which would reintroduce a concept (time-of-day, timezone) this domain
+    # deliberately has no use for.
+    "DTZ011",
+    "DTZ007",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# yfinance is an unofficial scraper with no documented exception types and
+# no stable schema (see backend/AGENTS.md's "Known limitations") — a bare
+# `except Exception` here is deliberate defensive coding against an
+# unreliable third-party surface, not a swallowed real bug.
+"app/adapters/market_data/yfinance_adapter.py" = ["BLE001", "S112"]
+"app/adapters/market_intel/yfinance_news_adapter.py" = ["BLE001"]

@@ -21,13 +21,17 @@ from app.domain.models import Note
 
 class NoteRepo(ABC):
     @abstractmethod
-    def add(self, agent: str, scope: str, title: str, body: str, account_id: int | None = None) -> int:
+    def add(
+        self, agent: str, scope: str, title: str, body: str, account_id: int | None = None
+    ) -> int:
         """Write one note. Returns the new note's id. Never overwrites or
         merges with an existing note — every call is a new row, even a
         repeat "nothing to report" from the same agent on the same day."""
 
     @abstractmethod
-    def list(self, scope: str | None = None, since: datetime | None = None, limit: int = 20) -> list[Note]:
+    def list(
+        self, scope: str | None = None, since: datetime | None = None, limit: int = 20
+    ) -> list[Note]:
         """Most recent notes first. `scope` filters to 'account' or
         'portfolio' notes; omit for both. Includes dismissed notes — callers
         that want to hide them filter on `dismissed_at is None` themselves,

@@ -41,7 +41,11 @@ def market_data() -> YFinanceMarketData:
 def test_prefers_long_name_when_short_name_is_just_the_symbol(monkeypatch, market_data):
     fake = _FakeTicker(
         fast_info={"currency": "EUR"},
-        info={"shortName": "0P0001CLDM.F", "longName": "Fidelity S&P 500 Index EUR P Acc", "quoteType": "MUTUALFUND"},
+        info={
+            "shortName": "0P0001CLDM.F",
+            "longName": "Fidelity S&P 500 Index EUR P Acc",
+            "quoteType": "MUTUALFUND",
+        },
         hist=_hist(),
     )
     monkeypatch.setattr(module.yf, "Ticker", lambda symbol: fake)

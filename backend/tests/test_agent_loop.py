@@ -12,9 +12,18 @@ import asyncio
 from ai.common.agent_loop import run_agent
 
 TOOLS = [
-    {"type": "function", "function": {"name": "save_security_mapping", "description": "", "parameters": {}}},
-    {"type": "function", "function": {"name": "flag_for_review", "description": "", "parameters": {}}},
-    {"type": "function", "function": {"name": "validate_listing", "description": "", "parameters": {}}},
+    {
+        "type": "function",
+        "function": {"name": "save_security_mapping", "description": "", "parameters": {}},
+    },
+    {
+        "type": "function",
+        "function": {"name": "flag_for_review", "description": "", "parameters": {}},
+    },
+    {
+        "type": "function",
+        "function": {"name": "validate_listing", "description": "", "parameters": {}},
+    },
 ]
 TERMINAL = {"save_security_mapping": "SAVED", "flag_for_review": "FLAGGED"}
 
@@ -49,7 +58,15 @@ def test_terminates_on_successful_terminal_tool():
     )
 
     result = asyncio.run(
-        run_agent("system", "user", TOOLS, _ok_call_tool, chat_client, max_steps=5, terminal_tools=TERMINAL)
+        run_agent(
+            "system",
+            "user",
+            TOOLS,
+            _ok_call_tool,
+            chat_client,
+            max_steps=5,
+            terminal_tools=TERMINAL,
+        )
     )
 
     assert result.status == "SAVED"
@@ -74,7 +91,15 @@ def test_does_not_terminate_when_the_terminal_tool_call_fails():
         return {"ok": True}
 
     result = asyncio.run(
-        run_agent("system", "user", TOOLS, failing_then_ok, chat_client, max_steps=5, terminal_tools=TERMINAL)
+        run_agent(
+            "system",
+            "user",
+            TOOLS,
+            failing_then_ok,
+            chat_client,
+            max_steps=5,
+            terminal_tools=TERMINAL,
+        )
     )
 
     assert result.status == "FLAGGED"
@@ -84,10 +109,20 @@ def test_does_not_terminate_when_the_terminal_tool_call_fails():
 
 
 def test_nudges_once_then_errors_on_a_second_text_only_reply():
-    chat_client = _FakeChatClient([_reply(content="thinking..."), _reply(content="still thinking...")])
+    chat_client = _FakeChatClient(
+        [_reply(content="thinking..."), _reply(content="still thinking...")]
+    )
 
     result = asyncio.run(
-        run_agent("system", "user", TOOLS, _ok_call_tool, chat_client, max_steps=5, terminal_tools=TERMINAL)
+        run_agent(
+            "system",
+            "user",
+            TOOLS,
+            _ok_call_tool,
+            chat_client,
+            max_steps=5,
+            terminal_tools=TERMINAL,
+        )
     )
 
     assert result.status == "ERROR"
@@ -97,11 +132,22 @@ def test_nudges_once_then_errors_on_a_second_text_only_reply():
 
 def test_recovers_after_the_nudge_if_the_model_then_calls_a_terminal_tool():
     chat_client = _FakeChatClient(
-        [_reply(content="thinking..."), _reply(tool_calls=[{"name": "flag_for_review", "arguments": {}}])]
+        [
+            _reply(content="thinking..."),
+            _reply(tool_calls=[{"name": "flag_for_review", "arguments": {}}]),
+        ]
     )
 
     result = asyncio.run(
-        run_agent("system", "user", TOOLS, _ok_call_tool, chat_client, max_steps=5, terminal_tools=TERMINAL)
+        run_agent(
+            "system",
+            "user",
+            TOOLS,
+            _ok_call_tool,
+            chat_client,
+            max_steps=5,
+            terminal_tools=TERMINAL,
+        )
     )
 
     assert result.status == "FLAGGED"
@@ -109,11 +155,21 @@ def test_recovers_after_the_nudge_if_the_model_then_calls_a_terminal_tool():
 
 
 def test_max_steps_when_nothing_terminates_the_run():
-    replies = [_reply(tool_calls=[{"name": "validate_listing", "arguments": {"symbol": "AAPL"}}])] * 3
+    replies = [
+        _reply(tool_calls=[{"name": "validate_listing", "arguments": {"symbol": "AAPL"}}])
+    ] * 3
     chat_client = _FakeChatClient(replies)
 
     result = asyncio.run(
-        run_agent("system", "user", TOOLS, _ok_call_tool, chat_client, max_steps=3, terminal_tools=TERMINAL)
+        run_agent(
+            "system",
+            "user",
+            TOOLS,
+            _ok_call_tool,
+            chat_client,
+            max_steps=3,
+            terminal_tools=TERMINAL,
+        )
     )
 
     assert result.status == "MAX_STEPS"
@@ -130,7 +186,15 @@ def test_unknown_tool_call_returns_an_error_without_crashing():
     )
 
     result = asyncio.run(
-        run_agent("system", "user", TOOLS, _ok_call_tool, chat_client, max_steps=5, terminal_tools=TERMINAL)
+        run_agent(
+            "system",
+            "user",
+            TOOLS,
+            _ok_call_tool,
+            chat_client,
+            max_steps=5,
+            terminal_tools=TERMINAL,
+        )
     )
 
     assert result.status == "FLAGGED"
@@ -146,7 +210,9 @@ def test_conversational_mode_ends_on_the_first_text_only_reply_no_nudge():
     chat_client = _FakeChatClient([_reply(content="Your portfolio is worth €15,744.")])
 
     result = asyncio.run(
-        run_agent("system", "user", TOOLS, _ok_call_tool, chat_client, max_steps=5, terminal_tools=None)
+        run_agent(
+            "system", "user", TOOLS, _ok_call_tool, chat_client, max_steps=5, terminal_tools=None
+        )
     )
 
     assert result.status == "REPLIED"
@@ -164,7 +230,9 @@ def test_conversational_mode_still_calls_tools_before_replying():
     )
 
     result = asyncio.run(
-        run_agent("system", "user", TOOLS, _ok_call_tool, chat_client, max_steps=5, terminal_tools=None)
+        run_agent(
+            "system", "user", TOOLS, _ok_call_tool, chat_client, max_steps=5, terminal_tools=None
+        )
     )
 
     assert result.status == "REPLIED"
@@ -178,7 +246,9 @@ def test_conversational_mode_still_respects_max_steps():
     chat_client = _FakeChatClient(replies)
 
     result = asyncio.run(
-        run_agent("system", "user", TOOLS, _ok_call_tool, chat_client, max_steps=3, terminal_tools=None)
+        run_agent(
+            "system", "user", TOOLS, _ok_call_tool, chat_client, max_steps=3, terminal_tools=None
+        )
     )
 
     assert result.status == "MAX_STEPS"
@@ -188,13 +258,25 @@ def test_security_resolver_style_call_is_unaffected_by_the_new_default(monkeypat
     """Regression: terminal_tools now defaults to None, but every existing
     agent passes it explicitly as a dict — confirm the nudge-then-ERROR
     behavior (not the new conversational ending) still applies when it does."""
-    chat_client = _FakeChatClient([_reply(content="thinking..."), _reply(content="still thinking...")])
-
-    result = asyncio.run(
-        run_agent("system", "user", TOOLS, _ok_call_tool, chat_client, max_steps=5, terminal_tools=TERMINAL)
+    chat_client = _FakeChatClient(
+        [_reply(content="thinking..."), _reply(content="still thinking...")]
     )
 
-    assert result.status == "ERROR"  # not "REPLIED" — terminal_tools was given, so the nudge path still applies
+    result = asyncio.run(
+        run_agent(
+            "system",
+            "user",
+            TOOLS,
+            _ok_call_tool,
+            chat_client,
+            max_steps=5,
+            terminal_tools=TERMINAL,
+        )
+    )
+
+    assert (
+        result.status == "ERROR"
+    )  # not "REPLIED" — terminal_tools was given, so the nudge path still applies
 
 
 # --- history (session memory) — portfolio_assistant ---
@@ -215,8 +297,14 @@ def test_history_is_replayed_before_the_new_user_message():
 
     asyncio.run(
         run_agent(
-            "system", "and my P&L?", TOOLS, _ok_call_tool, _CapturingChatClient(),
-            max_steps=5, terminal_tools=None, history=history,
+            "system",
+            "and my P&L?",
+            TOOLS,
+            _ok_call_tool,
+            _CapturingChatClient(),
+            max_steps=5,
+            terminal_tools=None,
+            history=history,
         )
     )
 
@@ -231,7 +319,16 @@ def test_no_history_behaves_exactly_like_before():
     chat_client = _FakeChatClient([_reply(content="ok")])
 
     result = asyncio.run(
-        run_agent("system", "user", TOOLS, _ok_call_tool, chat_client, max_steps=5, terminal_tools=None, history=None)
+        run_agent(
+            "system",
+            "user",
+            TOOLS,
+            _ok_call_tool,
+            chat_client,
+            max_steps=5,
+            terminal_tools=None,
+            history=None,
+        )
     )
 
     assert result.status == "REPLIED"

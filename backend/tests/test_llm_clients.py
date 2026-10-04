@@ -36,7 +36,11 @@ def test_to_wire_messages_assigns_and_links_a_single_tool_call_id():
     messages = [
         {"role": "system", "content": "sys"},
         {"role": "user", "content": "hi"},
-        {"role": "assistant", "content": "", "tool_calls": [{"name": "validate_listing", "arguments": {"symbol": "AAPL"}}]},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{"name": "validate_listing", "arguments": {"symbol": "AAPL"}}],
+        },
         {"role": "tool", "tool_name": "validate_listing", "content": '{"currency": "USD"}'},
     ]
 
@@ -102,7 +106,9 @@ def test_to_wire_messages_passes_through_plain_text_turns():
 
     wire = llm._to_wire_messages(messages)
 
-    assert wire == [{"role": "user", "content": "You must finish by calling one of: flag_for_review."}]
+    assert wire == [
+        {"role": "user", "content": "You must finish by calling one of: flag_for_review."}
+    ]
 
 
 # --- _from_wire_response: OpenAI's response shape -> this project's shape ---
@@ -115,7 +121,14 @@ def test_from_wire_response_parses_tool_calls_and_token_usage():
                 "message": {
                     "content": "",
                     "tool_calls": [
-                        {"id": "call_0", "type": "function", "function": {"name": "flag_for_review", "arguments": '{"reason": "ambiguous"}'}}
+                        {
+                            "id": "call_0",
+                            "type": "function",
+                            "function": {
+                                "name": "flag_for_review",
+                                "arguments": '{"reason": "ambiguous"}',
+                            },
+                        }
                     ],
                 }
             }
@@ -126,7 +139,9 @@ def test_from_wire_response_parses_tool_calls_and_token_usage():
     result = llm._from_wire_response(data)
 
     assert result["content"] == ""
-    assert result["tool_calls"] == [{"name": "flag_for_review", "arguments": {"reason": "ambiguous"}}]
+    assert result["tool_calls"] == [
+        {"name": "flag_for_review", "arguments": {"reason": "ambiguous"}}
+    ]
     assert result["prompt_tokens"] == 123
     assert result["completion_tokens"] == 45
 
@@ -167,7 +182,9 @@ def test_to_ollama_messages_wraps_tool_calls_under_a_function_key():
 
     assert converted[0] == {"role": "user", "content": "hi"}
     assistant = converted[1]
-    assert assistant["tool_calls"] == [{"function": {"name": "lookup_isin", "arguments": {"isin": "ES0144580Y14"}}}]
+    assert assistant["tool_calls"] == [
+        {"function": {"name": "lookup_isin", "arguments": {"isin": "ES0144580Y14"}}}
+    ]
     assert converted[2] == {"role": "tool", "tool_name": "lookup_isin", "content": "[]"}
     # The actual failure mode this regresses: ollama's SDK pydantic-validates
     # every outbound message against its own Message model before sending —
@@ -177,7 +194,10 @@ def test_to_ollama_messages_wraps_tool_calls_under_a_function_key():
 
 
 def test_to_ollama_messages_leaves_messages_without_tool_calls_untouched():
-    messages = [{"role": "system", "content": "sys"}, {"role": "assistant", "content": "no tools here"}]
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "assistant", "content": "no tools here"},
+    ]
 
     converted = llm._to_ollama_messages(messages)
 
@@ -218,11 +238,19 @@ def test_openai_compatible_client_posts_the_expected_payload_and_headers(monkeyp
         return _FakeResponse({"choices": [{"message": {"content": "ok"}}], "usage": {}})
 
     monkeypatch.setattr(llm.httpx, "post", fake_post)
-    client = llm.OpenAiCompatibleChatClient(model="llama-3.3-70b-versatile", base_url="https://api.groq.com/openai/v1/", api_key="secret")
+    client = llm.OpenAiCompatibleChatClient(
+        model="llama-3.3-70b-versatile",
+        base_url="https://api.groq.com/openai/v1/",
+        api_key="secret",
+    )
 
-    result = client.chat([{"role": "user", "content": "hi"}], tools=[{"type": "function", "function": {"name": "x"}}])
+    result = client.chat(
+        [{"role": "user", "content": "hi"}], tools=[{"type": "function", "function": {"name": "x"}}]
+    )
 
-    assert captured["url"] == "https://api.groq.com/openai/v1/chat/completions"  # trailing slash on base_url stripped
+    assert (
+        captured["url"] == "https://api.groq.com/openai/v1/chat/completions"
+    )  # trailing slash on base_url stripped
     assert captured["json"]["model"] == "llama-3.3-70b-versatile"
     assert captured["json"]["tools"] == [{"type": "function", "function": {"name": "x"}}]
     assert captured["headers"] == {"Authorization": "Bearer secret"}
@@ -237,7 +265,9 @@ def test_openai_compatible_client_omits_auth_header_without_an_api_key(monkeypat
         return _FakeResponse({"choices": [{"message": {"content": "ok"}}], "usage": {}})
 
     monkeypatch.setattr(llm.httpx, "post", fake_post)
-    client = llm.OpenAiCompatibleChatClient(model="local-model", base_url="http://localhost:8000/v1")
+    client = llm.OpenAiCompatibleChatClient(
+        model="local-model", base_url="http://localhost:8000/v1"
+    )
 
     client.chat([{"role": "user", "content": "hi"}], tools=[])
 
@@ -254,7 +284,12 @@ def test_build_chat_client_defaults_to_settings_and_ollama():
 
 
 def test_build_chat_client_overrides_take_precedence_over_settings():
-    client = llm.build_chat_client(provider="openai", model="llama-3.3-70b-versatile", base_url="https://api.groq.com/openai/v1", api_key="k")
+    client = llm.build_chat_client(
+        provider="openai",
+        model="llama-3.3-70b-versatile",
+        base_url="https://api.groq.com/openai/v1",
+        api_key="k",
+    )
 
     assert isinstance(client, llm.OpenAiCompatibleChatClient)
     assert client._model == "llama-3.3-70b-versatile"

@@ -50,9 +50,13 @@ design; this file is the enforceable rule set for anything added under here.
    `NoteRepo.add()` (`ai/mcp_servers/notes/tools/save_note.py`, Phase 8c of
    plans/agentic_asset_mapping_phase7_8.md): a note is append-only with no
    state machine to violate, so the repo method itself — not a use case —
-   is the guard. Any future write path needs the same property (either a
-   use-case guard, or a repo method simple enough that it can't be misused)
-   before a tool is allowed to call it.
+   is the guard. A third write path, `AssetIntelCacheRepo.put()`
+   (`ai/mcp_servers/market_intel/tools/*.py`, plans/market_intel.md), has
+   the same property: it's a plain upsert of
+   one (symbol, kind) cache row with no state machine, called as a side
+   effect of an otherwise read-only lookup. Any future write path needs the
+   same property (either a use-case guard, or a repo method simple enough
+   that it can't be misused) before a tool is allowed to call it.
 
 7. **Every agent run is recorded.** `ResolutionRepo.add_agent_run` and the
    `agent_runs` table already exist for this. The agent loop (Phase 6) must
@@ -122,6 +126,18 @@ design; this file is the enforceable rule set for anything added under here.
       *findable* by retrieval; it never makes a tool *callable* by an
       agent that didn't already list it (or the server it lives on with
       `None`) in that dict.
+
+13. **Egress tools take a bare identifier and nothing else.** Any MCP tool
+    that makes an outbound network call to a third party (`market_intel`'s
+    tools today, `ai/mcp_servers/market_intel/tools/`) must accept only a
+    `symbol: str` or a short free-text `topic: str` — never an `asset_id`,
+    and never a DB session/repo that could join against
+    `positions`/`accounts`/`holdings`. No such tool may accept a list
+    argument, and no code path may call one in a loop over the user's own
+    holdings. This is what makes "external data in, nothing internal out"
+    (root `AGENTS.md` §"Security rules") a structural property of the tool's
+    signature instead of a promise about how the model will use it — see
+    `plans/market_intel.md` §4 for the full reasoning.
 
 ## MCP SDK gotcha — a tool's return type shapes whether `call_tool` sees it
 

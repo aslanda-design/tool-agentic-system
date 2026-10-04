@@ -7,7 +7,7 @@ the dev DB.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -45,8 +45,8 @@ def test_list_sessions_orders_by_updated_at_most_recent_first(db):
     repo = SqlChatRepo(db)
     old = repo.create_session("Older")
     new = repo.create_session("Newer")
-    repo.touch_session(old, as_of=datetime.now(timezone.utc) - timedelta(days=1))
-    repo.touch_session(new, as_of=datetime.now(timezone.utc))
+    repo.touch_session(old, as_of=datetime.now(UTC) - timedelta(days=1))
+    repo.touch_session(new, as_of=datetime.now(UTC))
 
     sessions = repo.list_sessions()
 
@@ -72,7 +72,9 @@ def test_add_and_list_messages_in_transcript_order(db):
     session_id = repo.create_session()
 
     repo.add_message(session_id, "user", "what's my total value?")
-    repo.add_message(session_id, "assistant", "€15,744.", tool_calls=[{"name": "get_portfolio_summary"}])
+    repo.add_message(
+        session_id, "assistant", "€15,744.", tool_calls=[{"name": "get_portfolio_summary"}]
+    )
 
     messages = repo.list_messages(session_id)
 

@@ -28,7 +28,11 @@ def _refresh_market_data_job() -> None:
     session = SessionLocal()
     try:
         use_case = RefreshMarketDataUseCase(
-            YFinanceMarketData(), YFinanceFxRates(), SqlMarketDataRepo(session), SqlAssetRepo(session), settings.base_currency
+            YFinanceMarketData(),
+            YFinanceFxRates(),
+            SqlMarketDataRepo(session),
+            SqlAssetRepo(session),
+            settings.base_currency,
         )
         result = use_case.refresh_all()
         session.commit()
@@ -44,7 +48,10 @@ def _build_snapshots_job() -> None:
     session = SessionLocal()
     try:
         use_case = BuildSnapshotsUseCase(
-            SqlPortfolioRepo(session), SqlMarketDataRepo(session), SqlAssetRepo(session), settings.base_currency
+            SqlPortfolioRepo(session),
+            SqlMarketDataRepo(session),
+            SqlAssetRepo(session),
+            settings.base_currency,
         )
         days = use_case.execute()
         session.commit()
@@ -98,14 +105,20 @@ def run_resolver_job() -> None:
                 continue
             if result.status is ResolutionStatus.AUTO_ACCEPTED:
                 auto_accepted += 1
-        logger.info("Security resolver: %d/%d asset(s) auto-accepted", auto_accepted, len(asset_ids))
+        logger.info(
+            "Security resolver: %d/%d asset(s) auto-accepted", auto_accepted, len(asset_ids)
+        )
 
         if auto_accepted:
             refresh_result = container.build_refresh_market_data_use_case(session).refresh_all()
             session.commit()
             snapshot_days = container.build_snapshots_use_case(session).execute()
             session.commit()
-            logger.info("Post-resolver refresh: %s, %d snapshot day(s) rebuilt", refresh_result, snapshot_days)
+            logger.info(
+                "Post-resolver refresh: %s, %d snapshot day(s) rebuilt",
+                refresh_result,
+                snapshot_days,
+            )
     except Exception:
         session.rollback()
         logger.exception("Security resolver job failed")
@@ -119,7 +132,10 @@ def gap_fill_snapshots_on_startup() -> None:
     session = SessionLocal()
     try:
         use_case = BuildSnapshotsUseCase(
-            SqlPortfolioRepo(session), SqlMarketDataRepo(session), SqlAssetRepo(session), settings.base_currency
+            SqlPortfolioRepo(session),
+            SqlMarketDataRepo(session),
+            SqlAssetRepo(session),
+            settings.base_currency,
         )
         last = SqlPortfolioRepo(session).last_snapshot_date()
         from datetime import timedelta
@@ -136,8 +152,22 @@ def gap_fill_snapshots_on_startup() -> None:
 
 
 def build_scheduler() -> BackgroundScheduler:
-    scheduler = BackgroundScheduler(timezone="UTC", job_defaults={"max_instances": 1, "coalesce": True})
-    scheduler.add_job(_refresh_market_data_job, "interval", minutes=settings.market_data_refresh_minutes, id="refresh_market_data")
-    scheduler.add_job(_build_snapshots_job, "cron", hour=settings.snapshot_build_hour_utc, id="build_snapshots")
-    scheduler.add_job(run_resolver_job, "interval", minutes=settings.resolver_interval_minutes, id="resolve_assets")
+    scheduler = BackgroundScheduler(
+        timezone="UTC", job_defaults={"max_instances": 1, "coalesce": True}
+    )
+    scheduler.add_job(
+        _refresh_market_data_job,
+        "interval",
+        minutes=settings.market_data_refresh_minutes,
+        id="refresh_market_data",
+    )
+    scheduler.add_job(
+        _build_snapshots_job, "cron", hour=settings.snapshot_build_hour_utc, id="build_snapshots"
+    )
+    scheduler.add_job(
+        run_resolver_job,
+        "interval",
+        minutes=settings.resolver_interval_minutes,
+        id="resolve_assets",
+    )
     return scheduler

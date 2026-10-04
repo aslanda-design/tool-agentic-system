@@ -42,7 +42,9 @@ TERMINAL_TOOLS = {"save_note": "SAVED"}
 PROMPT_PATH = Path(__file__).with_name("prompt.md")
 
 
-def render_user_message(account_id: int, mispriced: list[dict], freshness: dict, pending: list[dict]) -> str:
+def render_user_message(
+    account_id: int, mispriced: list[dict], freshness: dict, pending: list[dict]
+) -> str:
     """Compact text block describing everything this run found — put in
     the first user message rather than fetched via a tool call, so a small
     model can't skip reading it (same reasoning as security_resolver's
@@ -98,9 +100,13 @@ class ImportReviewerAgent:
 
     async def _run(self, account_id: int) -> AgentRunResult:
         try:
-            result = await asyncio.wait_for(self._run_loop(account_id), timeout=settings.agent_timeout_seconds)
+            result = await asyncio.wait_for(
+                self._run_loop(account_id), timeout=settings.agent_timeout_seconds
+            )
         except TimeoutError:
-            result = AgentRunResult(status="TIMEOUT", steps=0, error="agent run exceeded AGENT_TIMEOUT_SECONDS")
+            result = AgentRunResult(
+                status="TIMEOUT", steps=0, error="agent run exceeded AGENT_TIMEOUT_SECONDS"
+            )
         except Exception as exc:  # noqa: BLE001 — deliberate: the caller (an import request) must
             # never fail because the model or an MCP subprocess misbehaved; record it and fall
             # through to the fallback note below instead — see SecurityResolverAgent's identical reasoning.
@@ -136,7 +142,8 @@ class ImportReviewerAgent:
                 scope="account",
                 title="Import review didn't complete",
                 body=f"The automated review ended with status {result.status}"
-                + (f": {result.error}" if result.error else "") + ".",
+                + (f": {result.error}" if result.error else "")
+                + ".",
                 account_id=account_id,
             )
             db.commit()

@@ -73,14 +73,19 @@ class RefreshToolIndexUseCase:
         changed = [
             d
             for d in documents
-            if existing_hashes.get((d.server_module, d.tool_name, d.doc_kind, d.doc_text)) != d.content_hash
+            if existing_hashes.get((d.server_module, d.tool_name, d.doc_kind, d.doc_text))
+            != d.content_hash
         ]
         skipped = len(documents) - len(changed)
 
         if changed:
             embeddings = self.embedding_port.embed([d.doc_text for d in changed])
-            token_estimates = {(t.server_module, t.tool_name): t.schema_token_estimate for t in raw_tools}
-            self.repo.upsert_documents(changed, embeddings, self.embedding_port.model_name, token_estimates)
+            token_estimates = {
+                (t.server_module, t.tool_name): t.schema_token_estimate for t in raw_tools
+            }
+            self.repo.upsert_documents(
+                changed, embeddings, self.embedding_port.model_name, token_estimates
+            )
 
         current_keys = {(d.server_module, d.tool_name, d.doc_kind, d.doc_text) for d in documents}
         deleted = self.repo.delete_missing(current_keys)

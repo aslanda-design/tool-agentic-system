@@ -60,7 +60,9 @@ def render_user_message(resolution: dict) -> str:
     ]
     if resolution["note"]:
         lines.append(f"Note from the rules-based scorer: {resolution['note']}")
-    lines.append("Candidates (id · score · symbol · currency · MIC · last close · last trade · features):")
+    lines.append(
+        "Candidates (id · score · symbol · currency · MIC · last close · last trade · features):"
+    )
     for candidate in resolution["candidates"]:
         info = candidate["info"] or {}
         features = candidate["features"]
@@ -90,9 +92,13 @@ class SecurityResolverAgent:
 
     async def _run(self, resolution_id: int) -> AgentRunResult:
         try:
-            result = await asyncio.wait_for(self._run_loop(resolution_id), timeout=settings.agent_timeout_seconds)
+            result = await asyncio.wait_for(
+                self._run_loop(resolution_id), timeout=settings.agent_timeout_seconds
+            )
         except TimeoutError:
-            result = AgentRunResult(status="TIMEOUT", steps=0, error="agent run exceeded AGENT_TIMEOUT_SECONDS")
+            result = AgentRunResult(
+                status="TIMEOUT", steps=0, error="agent run exceeded AGENT_TIMEOUT_SECONDS"
+            )
         except Exception as exc:  # noqa: BLE001 — deliberate: the caller (a route/scheduler) must
             # never crash because the model or the MCP subprocess misbehaved; record it and fall
             # through to the flag_for_review fallback below instead.
@@ -109,7 +115,9 @@ class SecurityResolverAgent:
         async with open_mcp_server(MCP_MODULE, AGENT_TOOLS) as session:
             resolution = await session.call_tool("get_resolution", {"resolution_id": resolution_id})
             if resolution is None:
-                return AgentRunResult(status="ERROR", steps=0, error=f"resolution {resolution_id} not found")
+                return AgentRunResult(
+                    status="ERROR", steps=0, error=f"resolution {resolution_id} not found"
+                )
             return await run_agent(
                 system_prompt=PROMPT_PATH.read_text(encoding="utf-8"),
                 user_message=render_user_message(resolution),
@@ -125,7 +133,9 @@ class SecurityResolverAgent:
         try:
             use_case = build_resolve_security_use_case(db)
             try:
-                use_case.flag_for_review(resolution_id, note=f"agent {result.status}", flagged_by="agent")
+                use_case.flag_for_review(
+                    resolution_id, note=f"agent {result.status}", flagged_by="agent"
+                )
             except (ResolutionNotFoundError, DomainError):
                 db.rollback()
                 return

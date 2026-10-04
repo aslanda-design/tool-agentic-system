@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # Same image as docker-compose.yml's db service — a drop-in
+        # Postgres 16 with the pgvector extension binary added, needed for
+        # the tool_index table (migration 0006_tool_index.py).
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: investment_tracker
+          POSTGRES_PASSWORD: investment_tracker
+          POSTGRES_DB: investment_tracker
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U investment_tracker"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+psycopg://investment_tracker:investment_tracker@localhost:5432/investment_tracker
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev,ai,quant]"
+
+      - name: Create pg_trgm extension
+        # database/init/01-extensions.sql only runs on a docker-compose db
+        # container's first startup (Postgres's docker-entrypoint-initdb.d
+        # convention) — CI's service container needs the same extension
+        # created explicitly before Alembic's migrations run.
+        run: |
+          PGPASSWORD=investment_tracker psql -h localhost -U investment_tracker -d investment_tracker \
+            -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+
+      - name: Lint
+        run: |
+          ruff check .
+          ruff format --check .
+
+      - name: Test
+        run: pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Type-check and build
+        run: npm run build

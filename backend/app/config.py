@@ -110,5 +110,27 @@ class Settings(BaseSettings):
     # a no-op for any agent that doesn't need it yet.
     tool_rag_skip_below_tool_count: int = 12
 
+    # --- Market Intel (see plans/market_intel.md) ---
+    # Off by default, same rollout pattern as agent_enabled/tool_rag_enabled.
+    # Every tool this gates takes a bare symbol/topic string and nothing
+    # else — never account/holding data (plans/market_intel.md section 4).
+    market_intel_enabled: bool = False
+    # SEC requires a descriptive User-Agent identifying the requester on
+    # every EDGAR call, e.g. "MyApp contact@example.com" — this is the only
+    # credential-shaped thing it needs (no API key). Leave blank to skip
+    # SEC filings lookups (get_filing_events fails soft to "no data").
+    sec_edgar_user_agent: str = ""
+    # Finnhub (https://finnhub.io) — free tier, personal/non-commercial use
+    # only, 60 calls/min. One of two sentiment sources get_asset_sentiment
+    # fuses (the other, StockTwits, needs no key). Leave blank to skip it —
+    # sentiment then falls back to StockTwits alone, or "no_data" if that
+    # also has nothing. Only a symbol is ever sent, never account/holding
+    # data.
+    finnhub_api_key: str = ""
+    # How long a cached news/filings result for one symbol is served before
+    # being refetched — read-through, not a scheduled job (see
+    # plans/market_intel.md section 3.1).
+    market_intel_cache_minutes: int = 30
+
 
 settings = Settings()

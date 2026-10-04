@@ -4,7 +4,7 @@ plans/agentic_asset_mapping.md — candidate generation, then scoring/decision
 
 from __future__ import annotations
 
-from datetime import UTC, date
+from datetime import UTC, date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -36,7 +36,9 @@ class FakeMarketData:
     """Only the two MarketDataPort methods generate_candidates calls."""
 
     def __init__(
-        self, search_results: dict[str, list[AssetSearchResult]] | None = None, listings: dict[str, ListingInfo] | None = None
+        self,
+        search_results: dict[str, list[AssetSearchResult]] | None = None,
+        listings: dict[str, ListingInfo] | None = None,
     ) -> None:
         self.search_results = search_results or {}
         self.listings = listings or {}
@@ -59,7 +61,9 @@ def _listing(symbol: str, currency: str = "EUR", days_old: int = 0) -> ListingIn
         currency=currency,
         quote_type="ETF",
         last_close=Decimal(100),
-        last_trade_date=date(2026, 9, 14 - days_old) if days_old < 14 else date(2026, 8, 1),
+        # relative to date.today() (which production also calls internally),
+        # so this fixture never ages past STALE_AFTER_DAYS
+        last_trade_date=date.today() - timedelta(days=days_old),
         avg_volume=Decimal(1000),
     )
 
@@ -99,12 +103,30 @@ def _use_case(
 
 def test_generates_candidates_from_openfigi_and_yahoo_isin_search():
     figi_listings = [
-        FigiListing(ticker="EUNL", exch_code="GY", name="ISHARES CORE MSCI WORLD", security_type="ETP", share_class_figi="BBG000BLNNH6"),
-        FigiListing(ticker="IWDA", exch_code="LN", name="ISHARES CORE MSCI WORLD", security_type="ETP", share_class_figi="BBG000BLNNH6"),
+        FigiListing(
+            ticker="EUNL",
+            exch_code="GY",
+            name="ISHARES CORE MSCI WORLD",
+            security_type="ETP",
+            share_class_figi="BBG000BLNNH6",
+        ),
+        FigiListing(
+            ticker="IWDA",
+            exch_code="LN",
+            name="ISHARES CORE MSCI WORLD",
+            security_type="ETP",
+            share_class_figi="BBG000BLNNH6",
+        ),
     ]
     security_master = FakeSecurityMaster({"IE00B4L5Y983": figi_listings})
     market_data = FakeMarketData(
-        search_results={"IE00B4L5Y983": [AssetSearchResult(symbol="EUNL.DE", name="X", exchange=None, asset_class="ETF", currency="EUR")]},
+        search_results={
+            "IE00B4L5Y983": [
+                AssetSearchResult(
+                    symbol="EUNL.DE", name="X", exchange=None, asset_class="ETF", currency="EUR"
+                )
+            ]
+        },
         listings={"EUNL.DE": _listing("EUNL.DE", "EUR"), "IWDA.L": _listing("IWDA.L", "GBP")},
     )
     use_case = _use_case(security_master, market_data)
@@ -125,7 +147,13 @@ def test_generates_candidates_from_openfigi_and_yahoo_isin_search():
 def test_openfigi_unavailable_still_generates_candidates_from_yahoo():
     security_master = FakeSecurityMaster({"IE00B4L5Y983": None})  # provider unavailable
     market_data = FakeMarketData(
-        search_results={"IE00B4L5Y983": [AssetSearchResult(symbol="EUNL.DE", name="X", exchange=None, asset_class="ETF", currency="EUR")]},
+        search_results={
+            "IE00B4L5Y983": [
+                AssetSearchResult(
+                    symbol="EUNL.DE", name="X", exchange=None, asset_class="ETF", currency="EUR"
+                )
+            ]
+        },
         listings={"EUNL.DE": _listing("EUNL.DE")},
     )
     use_case = _use_case(security_master, market_data)
@@ -150,8 +178,16 @@ def test_no_isin_falls_back_to_broker_symbol_and_name_text_search():
     security_master = FakeSecurityMaster()  # must not be called without an ISIN
     market_data = FakeMarketData(
         search_results={
-            "EUNL": [AssetSearchResult(symbol="EUNL.DE", name="X", exchange=None, asset_class="ETF", currency="EUR")],
-            "iShares Core MSCI World": [AssetSearchResult(symbol="IWDA.L", name="Y", exchange=None, asset_class="ETF", currency="GBP")],
+            "EUNL": [
+                AssetSearchResult(
+                    symbol="EUNL.DE", name="X", exchange=None, asset_class="ETF", currency="EUR"
+                )
+            ],
+            "iShares Core MSCI World": [
+                AssetSearchResult(
+                    symbol="IWDA.L", name="Y", exchange=None, asset_class="ETF", currency="GBP"
+                )
+            ],
         },
         listings={"EUNL.DE": _listing("EUNL.DE"), "IWDA.L": _listing("IWDA.L", "GBP")},
     )
@@ -166,8 +202,22 @@ def test_no_isin_falls_back_to_broker_symbol_and_name_text_search():
 
 
 def test_candidate_missing_recent_prices_keeps_info_none_rather_than_dropping():
-    security_master = FakeSecurityMaster({"IE00B4L5Y983": [FigiListing(ticker="EUNL", exch_code="GY", name="", security_type="ETP", share_class_figi=None)]})
-    market_data = FakeMarketData(search_results={"IE00B4L5Y983": []}, listings={})  # EUNL.DE doesn't validate
+    security_master = FakeSecurityMaster(
+        {
+            "IE00B4L5Y983": [
+                FigiListing(
+                    ticker="EUNL",
+                    exch_code="GY",
+                    name="",
+                    security_type="ETP",
+                    share_class_figi=None,
+                )
+            ]
+        }
+    )
+    market_data = FakeMarketData(
+        search_results={"IE00B4L5Y983": []}, listings={}
+    )  # EUNL.DE doesn't validate
 
     use_case = _use_case(security_master, market_data)
     candidates = use_case.generate_candidates(_ctx())
@@ -182,19 +232,33 @@ def test_ranking_prefers_two_source_confirmation_and_matching_exchange():
     # exchange; B confirmed by both sources but a different exchange; C only
     # from one source. A must rank before B, B before C.
     figi_listings = [
-        FigiListing(ticker="A", exch_code="GY", name="", security_type="ETP", share_class_figi=None),
-        FigiListing(ticker="B", exch_code="LN", name="", security_type="ETP", share_class_figi=None),
-        FigiListing(ticker="C", exch_code="US", name="", security_type="ETP", share_class_figi=None),
+        FigiListing(
+            ticker="A", exch_code="GY", name="", security_type="ETP", share_class_figi=None
+        ),
+        FigiListing(
+            ticker="B", exch_code="LN", name="", security_type="ETP", share_class_figi=None
+        ),
+        FigiListing(
+            ticker="C", exch_code="US", name="", security_type="ETP", share_class_figi=None
+        ),
     ]
     security_master = FakeSecurityMaster({"IE00B4L5Y983": figi_listings})
     market_data = FakeMarketData(
         search_results={
             "IE00B4L5Y983": [
-                AssetSearchResult(symbol="A.DE", name="X", exchange=None, asset_class="ETF", currency="EUR"),
-                AssetSearchResult(symbol="B.L", name="X", exchange=None, asset_class="ETF", currency="GBP"),
+                AssetSearchResult(
+                    symbol="A.DE", name="X", exchange=None, asset_class="ETF", currency="EUR"
+                ),
+                AssetSearchResult(
+                    symbol="B.L", name="X", exchange=None, asset_class="ETF", currency="GBP"
+                ),
             ]
         },
-        listings={"A.DE": _listing("A.DE"), "B.L": _listing("B.L", "GBP"), "C": _listing("C", "USD")},
+        listings={
+            "A.DE": _listing("A.DE"),
+            "B.L": _listing("B.L", "GBP"),
+            "C": _listing("C", "USD"),
+        },
     )
     use_case = _use_case(security_master, market_data)
 
@@ -208,7 +272,9 @@ def test_truncates_to_max_candidates_before_validating():
     # only MAX_CANDIDATES should ever reach get_listing_info.
     exch_codes = ["US", "LN", "GY", "GF", "GS", "GM", "GD", "GB", "GH", "NA", "FP", "BB"]
     figi_listings = [
-        FigiListing(ticker=f"T{i}", exch_code=code, name="", security_type="ETP", share_class_figi=None)
+        FigiListing(
+            ticker=f"T{i}", exch_code=code, name="", security_type="ETP", share_class_figi=None
+        )
         for i, code in enumerate(exch_codes)
     ]
     security_master = FakeSecurityMaster({"IE00B4L5Y983": figi_listings})
@@ -241,17 +307,32 @@ def _setup_asset(
     from app.domain.models import AccountSource, Transaction, TransactionType
 
     asset = asset_repo.create(
-        symbol=symbol, name=name, asset_class=AssetClass.EQUITY, currency=currency, exchange=exchange,
-        isin=isin, needs_mapping=True,
+        symbol=symbol,
+        name=name,
+        asset_class=AssetClass.EQUITY,
+        currency=currency,
+        exchange=exchange,
+        isin=isin,
+        needs_mapping=True,
     )
-    account = portfolio_repo.get_or_create_account(broker_key, "U123", "Test account", currency, AccountSource.API)
+    account = portfolio_repo.get_or_create_account(
+        broker_key, "U123", "Test account", currency, AccountSource.API
+    )
     portfolio_repo.add_transactions(
         [
             Transaction(
-                id=None, account_id=account.id, asset_id=asset.id, type=TransactionType.BUY,
-                quantity=Decimal(1), price=Decimal(1), fees=Decimal(0), currency=currency,
-                executed_at=datetime(2026, 1, 1, tzinfo=UTC), trade_date=date_cls(2026, 1, 1),
-                external_id="x1", source=AccountSource.API,
+                id=None,
+                account_id=account.id,
+                asset_id=asset.id,
+                type=TransactionType.BUY,
+                quantity=Decimal(1),
+                price=Decimal(1),
+                fees=Decimal(0),
+                currency=currency,
+                executed_at=datetime(2026, 1, 1, tzinfo=UTC),
+                trade_date=date_cls(2026, 1, 1),
+                external_id="x1",
+                source=AccountSource.API,
             )
         ]
     )
@@ -265,10 +346,26 @@ def _winning_setup(asset_repo=None, portfolio_repo=None, resolution_repo=None):
     portfolio_repo = portfolio_repo or FakePortfolioRepo()
     asset = _setup_asset(asset_repo, portfolio_repo)
     security_master = FakeSecurityMaster(
-        {"IE00B4L5Y983": [FigiListing(ticker="EUNL", exch_code="GY", name="ISHARES CORE MSCI WORLD", security_type="ETP", share_class_figi="BBG000BLNNH6")]}
+        {
+            "IE00B4L5Y983": [
+                FigiListing(
+                    ticker="EUNL",
+                    exch_code="GY",
+                    name="ISHARES CORE MSCI WORLD",
+                    security_type="ETP",
+                    share_class_figi="BBG000BLNNH6",
+                )
+            ]
+        }
     )
     market_data = FakeMarketData(
-        search_results={"IE00B4L5Y983": [AssetSearchResult(symbol="EUNL.DE", name="X", exchange=None, asset_class="ETF", currency="EUR")]},
+        search_results={
+            "IE00B4L5Y983": [
+                AssetSearchResult(
+                    symbol="EUNL.DE", name="X", exchange=None, asset_class="ETF", currency="EUR"
+                )
+            ]
+        },
         listings={"EUNL.DE": _listing("EUNL.DE", "EUR")},
     )
     use_case = _use_case(security_master, market_data, asset_repo, portfolio_repo, resolution_repo)
@@ -277,7 +374,13 @@ def _winning_setup(asset_repo=None, portfolio_repo=None, resolution_repo=None):
 
 def test_build_context_derives_currency_and_broker_key_from_transactions():
     asset_repo, portfolio_repo = FakeAssetRepo(), FakePortfolioRepo()
-    asset = _setup_asset(asset_repo, portfolio_repo, currency="GBP", exchange="LSEETF", broker_key="interactive_brokers")
+    asset = _setup_asset(
+        asset_repo,
+        portfolio_repo,
+        currency="GBP",
+        exchange="LSEETF",
+        broker_key="interactive_brokers",
+    )
     use_case = _use_case(asset_repo=asset_repo, portfolio_repo=portfolio_repo)
 
     ctx = use_case._build_context(asset.id)
@@ -292,7 +395,9 @@ def test_build_context_derives_currency_and_broker_key_from_transactions():
 
 def test_build_context_falls_back_to_asset_currency_without_transactions():
     asset_repo, portfolio_repo = FakeAssetRepo(), FakePortfolioRepo()
-    asset = asset_repo.create(symbol="EUNL", name="", asset_class=AssetClass.EQUITY, currency="EUR", needs_mapping=True)
+    asset = asset_repo.create(
+        symbol="EUNL", name="", asset_class=AssetClass.EQUITY, currency="EUR", needs_mapping=True
+    )
     use_case = _use_case(asset_repo=asset_repo, portfolio_repo=portfolio_repo)
 
     ctx = use_case._build_context(asset.id)
@@ -324,12 +429,28 @@ def test_resolve_asset_keeps_existing_name_when_yahoo_has_no_real_name():
     asset_repo, portfolio_repo = FakeAssetRepo(), FakePortfolioRepo()
     asset = _setup_asset(asset_repo, portfolio_repo, name="Broker's own readable name")
     security_master = FakeSecurityMaster(
-        {"IE00B4L5Y983": [FigiListing(ticker="EUNL", exch_code="GY", name="", security_type="ETP", share_class_figi=None)]}
+        {
+            "IE00B4L5Y983": [
+                FigiListing(
+                    ticker="EUNL",
+                    exch_code="GY",
+                    name="",
+                    security_type="ETP",
+                    share_class_figi=None,
+                )
+            ]
+        }
     )
     nameless = _listing("EUNL.DE", "EUR")
     nameless.name = "EUNL.DE"  # no real name — yfinance_adapter's fallback shape
     market_data = FakeMarketData(
-        search_results={"IE00B4L5Y983": [AssetSearchResult(symbol="EUNL.DE", name="X", exchange=None, asset_class="ETF", currency="EUR")]},
+        search_results={
+            "IE00B4L5Y983": [
+                AssetSearchResult(
+                    symbol="EUNL.DE", name="X", exchange=None, asset_class="ETF", currency="EUR"
+                )
+            ]
+        },
         listings={"EUNL.DE": nameless},
     )
     use_case = _use_case(security_master, market_data, asset_repo, portfolio_repo)
@@ -341,8 +462,12 @@ def test_resolve_asset_keeps_existing_name_when_yahoo_has_no_real_name():
 
 def test_resolve_asset_conflict_falls_back_to_needs_review():
     asset_repo, portfolio_repo = FakeAssetRepo(), FakePortfolioRepo()
-    other = asset_repo.create(symbol="OTHER", name="", asset_class=AssetClass.EQUITY, currency="EUR", needs_mapping=True)
-    asset_repo.apply_listing(other.id, "EUNL.DE", "EUR", "XETR", None, None)  # steal the symbol first
+    other = asset_repo.create(
+        symbol="OTHER", name="", asset_class=AssetClass.EQUITY, currency="EUR", needs_mapping=True
+    )
+    asset_repo.apply_listing(
+        other.id, "EUNL.DE", "EUR", "XETR", None, None
+    )  # steal the symbol first
 
     use_case, asset, _, _ = _winning_setup(asset_repo, portfolio_repo)
     resolution = use_case.resolve_asset(asset.id)
@@ -356,7 +481,9 @@ def test_resolve_asset_conflict_falls_back_to_needs_review():
 def test_resolve_asset_no_candidates_is_needs_review():
     asset_repo, portfolio_repo = FakeAssetRepo(), FakePortfolioRepo()
     asset = _setup_asset(asset_repo, portfolio_repo)
-    use_case = _use_case(FakeSecurityMaster({"IE00B4L5Y983": []}), FakeMarketData(), asset_repo, portfolio_repo)
+    use_case = _use_case(
+        FakeSecurityMaster({"IE00B4L5Y983": []}), FakeMarketData(), asset_repo, portfolio_repo
+    )
 
     resolution = use_case.resolve_asset(asset.id)
 
@@ -370,8 +497,12 @@ def test_resolve_asset_ambiguous_needs_agent_when_agent_enabled():
     security_master = FakeSecurityMaster(
         {
             "IE00B4L5Y983": [
-                FigiListing(ticker="A", exch_code="GY", name="", security_type="ETP", share_class_figi=None),
-                FigiListing(ticker="B", exch_code="GF", name="", security_type="ETP", share_class_figi=None),
+                FigiListing(
+                    ticker="A", exch_code="GY", name="", security_type="ETP", share_class_figi=None
+                ),
+                FigiListing(
+                    ticker="B", exch_code="GF", name="", security_type="ETP", share_class_figi=None
+                ),
             ]
         }
     )
@@ -379,7 +510,9 @@ def test_resolve_asset_ambiguous_needs_agent_when_agent_enabled():
         search_results={"IE00B4L5Y983": []},
         listings={"A.DE": _listing("A.DE", "EUR"), "B.F": _listing("B.F", "EUR")},
     )
-    use_case = _use_case(security_master, market_data, asset_repo, portfolio_repo, agent_enabled=True)
+    use_case = _use_case(
+        security_master, market_data, asset_repo, portfolio_repo, agent_enabled=True
+    )
 
     resolution = use_case.resolve_asset(asset.id)
 
@@ -405,7 +538,9 @@ def test_resolve_asset_supersedes_a_previous_open_resolution():
 def test_add_candidate_scores_and_returns_it_with_an_id():
     resolution_repo = FakeResolutionRepo()
     use_case, asset, _, _ = _winning_setup(resolution_repo=resolution_repo)
-    resolution = use_case.resolve_asset(asset.id)  # AUTO_ACCEPTED already, but the resolution row still exists
+    resolution = use_case.resolve_asset(
+        asset.id
+    )  # AUTO_ACCEPTED already, but the resolution row still exists
 
     use_case.market_data.listings["EXTRA.MI"] = _listing("EXTRA.MI", "EUR")
     candidate = use_case.add_candidate(resolution.id, "EXTRA.MI", source="user")
@@ -437,13 +572,21 @@ def test_add_candidate_unknown_resolution_raises():
 
 
 def _ambiguous_resolution(agent_enabled=False):
-    asset_repo, portfolio_repo, resolution_repo = FakeAssetRepo(), FakePortfolioRepo(), FakeResolutionRepo()
+    asset_repo, portfolio_repo, resolution_repo = (
+        FakeAssetRepo(),
+        FakePortfolioRepo(),
+        FakeResolutionRepo(),
+    )
     asset = _setup_asset(asset_repo, portfolio_repo)
     security_master = FakeSecurityMaster(
         {
             "IE00B4L5Y983": [
-                FigiListing(ticker="A", exch_code="GY", name="", security_type="ETP", share_class_figi=None),
-                FigiListing(ticker="B", exch_code="GF", name="", security_type="ETP", share_class_figi=None),
+                FigiListing(
+                    ticker="A", exch_code="GY", name="", security_type="ETP", share_class_figi=None
+                ),
+                FigiListing(
+                    ticker="B", exch_code="GF", name="", security_type="ETP", share_class_figi=None
+                ),
             ]
         }
     )
@@ -451,7 +594,9 @@ def _ambiguous_resolution(agent_enabled=False):
         search_results={"IE00B4L5Y983": []},
         listings={"A.DE": _listing("A.DE", "EUR"), "B.F": _listing("B.F", "EUR")},
     )
-    use_case = _use_case(security_master, market_data, asset_repo, portfolio_repo, resolution_repo, agent_enabled)
+    use_case = _use_case(
+        security_master, market_data, asset_repo, portfolio_repo, resolution_repo, agent_enabled
+    )
     resolution = use_case.resolve_asset(asset.id)
     return use_case, asset, asset_repo, resolution
 
@@ -486,13 +631,28 @@ def test_accept_unknown_candidate_raises():
 
 
 def test_accept_stale_candidate_raises():
-    asset_repo, portfolio_repo, resolution_repo = FakeAssetRepo(), FakePortfolioRepo(), FakeResolutionRepo()
+    asset_repo, portfolio_repo, resolution_repo = (
+        FakeAssetRepo(),
+        FakePortfolioRepo(),
+        FakeResolutionRepo(),
+    )
     asset = _setup_asset(asset_repo, portfolio_repo)
     security_master = FakeSecurityMaster(
-        {"IE00B4L5Y983": [FigiListing(ticker="OLD", exch_code="GY", name="", security_type="ETP", share_class_figi=None)]}
+        {
+            "IE00B4L5Y983": [
+                FigiListing(
+                    ticker="OLD",
+                    exch_code="GY",
+                    name="",
+                    security_type="ETP",
+                    share_class_figi=None,
+                )
+            ]
+        }
     )
     market_data = FakeMarketData(
-        search_results={"IE00B4L5Y983": []}, listings={"OLD.DE": _listing("OLD.DE", "EUR", days_old=30)}
+        search_results={"IE00B4L5Y983": []},
+        listings={"OLD.DE": _listing("OLD.DE", "EUR", days_old=30)},
     )
     use_case = _use_case(security_master, market_data, asset_repo, portfolio_repo, resolution_repo)
     resolution = use_case.resolve_asset(asset.id)

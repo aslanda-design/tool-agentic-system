@@ -12,7 +12,7 @@ from app.ports.repositories import AssetRepo, MarketDataRepo, PortfolioRepo
 
 from .dto import AllocationSliceDTO, HistoryPointDTO, PortfolioSummaryDTO, PositionDTO
 
-ZERO = Decimal("0")
+ZERO = Decimal(0)
 RETURN_PERIODS = {"1d": 1, "1w": 7, "1m": 30, "1y": 365}
 
 
@@ -32,9 +32,11 @@ class QueryPortfolioUseCase:
     def _rate_to_base(self, currency: str, on_date: date | None = None) -> Decimal:
         currency = currency.upper()
         if currency == self.base_currency:
-            return Decimal("1")
-        rate = self.market_data_repo.get_fx_rate(currency, self.base_currency, on_date or date.today())
-        return rate if rate is not None else Decimal("1")
+            return Decimal(1)
+        rate = self.market_data_repo.get_fx_rate(
+            currency, self.base_currency, on_date or date.today()
+        )
+        return rate if rate is not None else Decimal(1)
 
     def list_positions(self, account_id: int | None = None) -> list[PositionDTO]:
         rows = self.portfolio_repo.list_positions(account_id)
@@ -44,7 +46,11 @@ class QueryPortfolioUseCase:
             asset_id = row["asset_id"]
             currency = row["currency"]
             quote = self.market_data_repo.get_quote(asset_id)
-            last_price = quote["price"] if quote else self.market_data_repo.get_price_on_or_before(asset_id, today)
+            last_price = (
+                quote["price"]
+                if quote
+                else self.market_data_repo.get_price_on_or_before(asset_id, today)
+            )
             rate = self._rate_to_base(currency)
             quantity = row["quantity"]
             cost_basis = quantity * row["avg_cost_price"] * rate
@@ -56,14 +62,18 @@ class QueryPortfolioUseCase:
                 market_value = None
                 pnl = None
                 pnl_pct = None
-                returns: dict[str, Decimal | None] = {label: None for label in (*RETURN_PERIODS, "ytd")}
+                returns: dict[str, Decimal | None] = {
+                    label: None for label in (*RETURN_PERIODS, "ytd")
+                }
             else:
                 market_value = quantity * last_price * rate
                 pnl = unrealized_pnl(market_value, cost_basis)
                 pnl_pct = unrealized_pnl_pct(market_value, cost_basis)
                 returns = {}
                 for label, days in RETURN_PERIODS.items():
-                    past_price = self.market_data_repo.get_price_on_or_before(asset_id, today - timedelta(days=days))
+                    past_price = self.market_data_repo.get_price_on_or_before(
+                        asset_id, today - timedelta(days=days)
+                    )
                     returns[label] = price_return(past_price, last_price) if past_price else None
                 jan1 = date(today.year, 1, 1)
                 ytd_price = self.market_data_repo.get_price_on_or_before(asset_id, jan1)
@@ -124,13 +134,17 @@ class QueryPortfolioUseCase:
             net_invested=net_invested,
             cash=cash,
             unrealized_pnl=unrealized_pnl(market_value, priced_cost_basis) if priced else None,
-            unrealized_pnl_pct=unrealized_pnl_pct(market_value, priced_cost_basis) if priced else None,
+            unrealized_pnl_pct=unrealized_pnl_pct(market_value, priced_cost_basis)
+            if priced
+            else None,
             day_change=day_change,
             day_change_pct=(day_change / prev_value) if prev_value != ZERO else None,
             unpriced_count=unpriced_count,
         )
 
-    def get_history(self, range_key: str = "1Y", asset_ids: list[int] | None = None) -> list[HistoryPointDTO]:
+    def get_history(
+        self, range_key: str = "1Y", asset_ids: list[int] | None = None
+    ) -> list[HistoryPointDTO]:
         today = date.today()
         start_by_range = {
             "1M": today - timedelta(days=30),
@@ -142,12 +156,15 @@ class QueryPortfolioUseCase:
         if asset_ids:
             rows = self.portfolio_repo.get_position_snapshots_totals(start, today, asset_ids)
             return [
-                HistoryPointDTO(date=r["date"], market_value=r["market_value"], cost_basis=r["cost_basis"])
+                HistoryPointDTO(
+                    date=r["date"], market_value=r["market_value"], cost_basis=r["cost_basis"]
+                )
                 for r in rows
             ]
         points = self.portfolio_repo.get_portfolio_snapshots(start, today)
         return [
-            HistoryPointDTO(date=p.date, market_value=p.market_value, cost_basis=p.net_invested) for p in points
+            HistoryPointDTO(date=p.date, market_value=p.market_value, cost_basis=p.net_invested)
+            for p in points
         ]
 
     def get_allocation(self, by: str = "asset_class") -> list[AllocationSliceDTO]:

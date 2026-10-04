@@ -14,13 +14,21 @@ from app.domain.listings import ListingInfo, resolved_display_name
 
 def _info(name: str, symbol: str = "VUSA.L") -> ListingInfo:
     return ListingInfo(
-        symbol=symbol, name=name, currency="GBP", quote_type="ETF",
-        last_close=Decimal(100), last_trade_date=date(2026, 9, 1), avg_volume=Decimal(1000),
+        symbol=symbol,
+        name=name,
+        currency="GBP",
+        quote_type="ETF",
+        last_close=Decimal(100),
+        last_trade_date=date(2026, 9, 1),
+        avg_volume=Decimal(1000),
     )
 
 
 def test_returns_the_name_when_it_differs_from_the_symbol():
-    assert resolved_display_name(_info("Vanguard S&P 500 UCITS ETF"), "VUSA.L") == "Vanguard S&P 500 UCITS ETF"
+    assert (
+        resolved_display_name(_info("Vanguard S&P 500 UCITS ETF"), "VUSA.L")
+        == "Vanguard S&P 500 UCITS ETF"
+    )
 
 
 def test_returns_none_when_yahoo_only_gave_back_the_symbol_itself():

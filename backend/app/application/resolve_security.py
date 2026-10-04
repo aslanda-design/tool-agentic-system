@@ -155,7 +155,9 @@ class ResolveSecurityUseCase:
 
         if ctx.isin:
             figi_listings = self.security_master.map_isin(ctx.isin)
-            for listing in figi_listings or []:  # None (provider unavailable) is fine — just fewer candidates
+            for listing in (
+                figi_listings or []
+            ):  # None (provider unavailable) is fine — just fewer candidates
                 add(yahoo_symbol_from_figi(listing.ticker, listing.exch_code), "openfigi", listing)
 
             for hit in self.market_data.search(ctx.isin):
@@ -214,7 +216,9 @@ class ResolveSecurityUseCase:
                 status, chosen, note = ResolutionStatus.NEEDS_REVIEW, None, str(exc)
 
         self.resolution_repo.supersede_open(asset_id)
-        resolution_id = self.resolution_repo.create(ctx, status, decided_by, note, SCORER_VERSION, candidates)
+        resolution_id = self.resolution_repo.create(
+            ctx, status, decided_by, note, SCORER_VERSION, candidates
+        )
         if chosen is not None:
             self.resolution_repo.select_candidate(resolution_id, chosen.id)
         return self.resolution_repo.get(resolution_id)
@@ -240,12 +244,16 @@ class ResolveSecurityUseCase:
         candidate.info = self.market_data.get_listing_info(symbol)
         candidate.asset_class = _infer_asset_class(candidate)
 
-        score_candidates(resolution.context, [*resolution.candidates, candidate], today=date.today())
+        score_candidates(
+            resolution.context, [*resolution.candidates, candidate], today=date.today()
+        )
         candidate_id = self.resolution_repo.add_candidate(resolution_id, candidate)
         candidate.id = candidate_id
         return candidate
 
-    def accept(self, resolution_id: int, candidate_id: int, decided_by: str, note: str = "") -> ResolutionDTO:
+    def accept(
+        self, resolution_id: int, candidate_id: int, decided_by: str, note: str = ""
+    ) -> ResolutionDTO:
         """Apply one of a resolution's candidates as the asset's pricing
         listing — the single write path used by both the user-facing REST
         endpoint and the (later) `save_security_mapping` MCP tool.
@@ -258,7 +266,9 @@ class ResolveSecurityUseCase:
             raise DomainError(f"Resolution {resolution_id} is already {resolution.status.value}")
         candidate = next((c for c in resolution.candidates if c.id == candidate_id), None)
         if candidate is None:
-            raise DomainError(f"Candidate {candidate_id} does not belong to resolution {resolution_id}")
+            raise DomainError(
+                f"Candidate {candidate_id} does not belong to resolution {resolution_id}"
+            )
         if not candidate.features.get("has_recent_price"):
             raise DomainError(f"{candidate.symbol!r} has no recent price — can't be accepted")
         if candidate.info is None or candidate.info.currency is None:
@@ -275,11 +285,17 @@ class ResolveSecurityUseCase:
             name=resolved_display_name(candidate.info, candidate.symbol),
         )
         self.resolution_repo.select_candidate(resolution_id, candidate_id)
-        status = ResolutionStatus.RESOLVED_BY_AGENT if decided_by == "agent" else ResolutionStatus.RESOLVED_BY_USER
+        status = (
+            ResolutionStatus.RESOLVED_BY_AGENT
+            if decided_by == "agent"
+            else ResolutionStatus.RESOLVED_BY_USER
+        )
         self.resolution_repo.set_status(resolution_id, status, decided_by, note)
         return self.resolution_repo.get(resolution_id)
 
-    def flag_for_review(self, resolution_id: int, note: str, flagged_by: str | None = None) -> ResolutionDTO:
+    def flag_for_review(
+        self, resolution_id: int, note: str, flagged_by: str | None = None
+    ) -> ResolutionDTO:
         """Hand a resolution to a human — the escape hatch for an agent (or
         a user) that can't confidently pick a candidate. NEEDS_REVIEW isn't
         a terminal status (see ResolutionStatus.is_terminal), so this can
@@ -289,5 +305,7 @@ class ResolveSecurityUseCase:
             raise ResolutionNotFoundError(f"Resolution {resolution_id} not found")
         if resolution.status.is_terminal:
             raise DomainError(f"Resolution {resolution_id} is already {resolution.status.value}")
-        self.resolution_repo.set_status(resolution_id, ResolutionStatus.NEEDS_REVIEW, flagged_by, note)
+        self.resolution_repo.set_status(
+            resolution_id, ResolutionStatus.NEEDS_REVIEW, flagged_by, note
+        )
         return self.resolution_repo.get(resolution_id)

@@ -15,7 +15,7 @@ from typing import Protocol
 
 from app.domain.models import Transaction, TransactionType
 
-ZERO = Decimal("0")
+ZERO = Decimal(0)
 
 
 class _WeightedPosition(Protocol):

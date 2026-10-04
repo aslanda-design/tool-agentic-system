@@ -28,12 +28,16 @@ STALE_AFTER_DAYS = 5
 
 
 class QueryMarketDataUseCase:
-    def __init__(self, asset_repo: AssetRepo, portfolio_repo: PortfolioRepo, market_data_repo: MarketDataRepo) -> None:
+    def __init__(
+        self, asset_repo: AssetRepo, portfolio_repo: PortfolioRepo, market_data_repo: MarketDataRepo
+    ) -> None:
         self.asset_repo = asset_repo
         self.portfolio_repo = portfolio_repo
         self.market_data_repo = market_data_repo
 
-    def get_asset(self, asset_id: int | None = None, symbol: str | None = None) -> AssetSummaryDTO | None:
+    def get_asset(
+        self, asset_id: int | None = None, symbol: str | None = None
+    ) -> AssetSummaryDTO | None:
         if (asset_id is None) == (symbol is None):
             raise ValueError("get_asset needs exactly one of asset_id or symbol")
         asset = (
@@ -45,7 +49,11 @@ class QueryMarketDataUseCase:
         if asset is None:
             return None
         quote = self.market_data_repo.get_quote(asset.id)
-        last_price = quote["price"] if quote else self.market_data_repo.get_price_on_or_before(asset.id, date.today())
+        last_price = (
+            quote["price"]
+            if quote
+            else self.market_data_repo.get_price_on_or_before(asset.id, date.today())
+        )
         return AssetSummaryDTO(
             asset_id=asset.id,
             symbol=asset.symbol,
@@ -83,7 +91,12 @@ class QueryMarketDataUseCase:
         rate = self.market_data_repo.get_fx_rate(base, quote, on_date or date.today())
         if rate is None:
             return None
-        return {"base": base.upper(), "quote": quote.upper(), "rate": rate, "on_date": on_date or date.today()}
+        return {
+            "base": base.upper(),
+            "quote": quote.upper(),
+            "rate": rate,
+            "on_date": on_date or date.today(),
+        }
 
     def get_data_freshness(self) -> DataFreshnessDTO:
         """Iterates currently-held assets (typically well under a hundred —
@@ -97,8 +110,13 @@ class QueryMarketDataUseCase:
             if last_date is None or (today - last_date).days > STALE_AFTER_DAYS:
                 asset = self.asset_repo.get(asset_id)
                 if asset is not None:
-                    stale.append(StalePositionDTO(asset_id=asset_id, symbol=asset.symbol, last_price_date=last_date))
+                    stale.append(
+                        StalePositionDTO(
+                            asset_id=asset_id, symbol=asset.symbol, last_price_date=last_date
+                        )
+                    )
         unmapped = [
-            UnmappedAssetDTO(asset_id=a.id, symbol=a.symbol) for a in self.asset_repo.list_needing_mapping()
+            UnmappedAssetDTO(asset_id=a.id, symbol=a.symbol)
+            for a in self.asset_repo.list_needing_mapping()
         ]
         return DataFreshnessDTO(as_of=today, stale_positions=stale, unmapped_assets=unmapped)

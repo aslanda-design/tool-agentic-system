@@ -18,7 +18,9 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 
 @router.get("/returns")
-def get_returns(scope: str = "portfolio", periods: str | None = None, db: Session = Depends(get_db)):
+def get_returns(
+    scope: str = "portfolio", periods: str | None = None, db: Session = Depends(get_db)
+):
     period_list = [p.strip() for p in periods.split(",") if p.strip()] if periods else None
     return container.build_query_analytics_use_case(db).get_returns(scope, period_list)
 
@@ -39,5 +41,7 @@ def get_drawdown(scope: str = "portfolio", range: str = "1Y", db: Session = Depe
 
 
 @router.get("/check-import-prices")
-def check_import_prices(account_id: int | None = None, since: date | None = None, db: Session = Depends(get_db)):
+def check_import_prices(
+    account_id: int | None = None, since: date | None = None, db: Session = Depends(get_db)
+):
     return container.build_query_analytics_use_case(db).check_import_prices(account_id, since)

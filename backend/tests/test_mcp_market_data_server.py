@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from ai.mcp_servers.market_data import server
@@ -21,10 +21,14 @@ from tests.fakes import FakeAssetRepo, FakeMarketDataRepo, FakePortfolioRepo
 D = Decimal
 
 
-def _use_case(asset_repo=None, portfolio_repo=None, market_data_repo=None) -> QueryMarketDataUseCase:
+def _use_case(
+    asset_repo=None, portfolio_repo=None, market_data_repo=None
+) -> QueryMarketDataUseCase:
     asset_repo = asset_repo or FakeAssetRepo()
     return QueryMarketDataUseCase(
-        asset_repo, portfolio_repo or FakePortfolioRepo(asset_repo), market_data_repo or FakeMarketDataRepo()
+        asset_repo,
+        portfolio_repo or FakePortfolioRepo(asset_repo),
+        market_data_repo or FakeMarketDataRepo(),
     )
 
 
@@ -49,7 +53,7 @@ def test_get_asset_returns_jsonable_summary(monkeypatch):
     asset_repo = FakeAssetRepo()
     asset = asset_repo.create("AAPL", "Apple Inc.", AssetClass.EQUITY, "USD")
     market_data_repo = FakeMarketDataRepo()
-    market_data_repo.upsert_quote(asset.id, D(200), D(198), "USD", datetime.now(timezone.utc), "yfinance")
+    market_data_repo.upsert_quote(asset.id, D(200), D(198), "USD", datetime.now(UTC), "yfinance")
     use_case = _use_case(asset_repo, market_data_repo=market_data_repo)
     monkeypatch.setattr(get_asset_tool, "build_query_market_data_use_case", lambda db: use_case)
 
@@ -63,14 +67,24 @@ def test_get_price_history_downsamples(monkeypatch):
     asset_repo = FakeAssetRepo()
     asset = asset_repo.create("AAPL", "Apple", AssetClass.EQUITY, "USD")
     market_data_repo = FakeMarketDataRepo()
-    bars = [{"date": date(2026, 1, 1), "close": D(100)}, {"date": date(2026, 1, 2), "close": D(101)}]
+    bars = [
+        {"date": date(2026, 1, 1), "close": D(100)},
+        {"date": date(2026, 1, 2), "close": D(101)},
+    ]
     market_data_repo.upsert_bars(asset.id, bars, "yfinance")
     use_case = _use_case(asset_repo, market_data_repo=market_data_repo)
-    monkeypatch.setattr(get_price_history_tool, "build_query_market_data_use_case", lambda db: use_case)
+    monkeypatch.setattr(
+        get_price_history_tool, "build_query_market_data_use_case", lambda db: use_case
+    )
 
-    result = get_price_history_tool.get_price_history(asset.id, "2026-01-01", "2026-01-02", max_points=120)
+    result = get_price_history_tool.get_price_history(
+        asset.id, "2026-01-01", "2026-01-02", max_points=120
+    )
 
-    assert result == [{"date": "2026-01-01", "close": 100.0}, {"date": "2026-01-02", "close": 101.0}]
+    assert result == [
+        {"date": "2026-01-01", "close": 100.0},
+        {"date": "2026-01-02", "close": 101.0},
+    ]
 
 
 def test_get_fx_rate_returns_error_dict_for_unknown_pair(monkeypatch):
@@ -95,7 +109,9 @@ def test_get_fx_rate_returns_known_rate(monkeypatch):
 
 def test_get_data_freshness_returns_jsonable_result(monkeypatch):
     use_case = _use_case()
-    monkeypatch.setattr(get_data_freshness_tool, "build_query_market_data_use_case", lambda db: use_case)
+    monkeypatch.setattr(
+        get_data_freshness_tool, "build_query_market_data_use_case", lambda db: use_case
+    )
 
     result = get_data_freshness_tool.get_data_freshness()
 
@@ -106,12 +122,19 @@ def test_get_data_freshness_returns_jsonable_result(monkeypatch):
 
 def test_server_registers_all_four_tools():
     tools = asyncio.run(server.mcp.list_tools())
-    assert {t.name for t in tools} == {"get_asset", "get_price_history", "get_fx_rate", "get_data_freshness"}
+    assert {t.name for t in tools} == {
+        "get_asset",
+        "get_price_history",
+        "get_fx_rate",
+        "get_data_freshness",
+    }
 
 
 def test_server_call_tool_round_trips_through_the_registered_function(monkeypatch):
     use_case = _use_case()
-    monkeypatch.setattr(get_data_freshness_tool, "build_query_market_data_use_case", lambda db: use_case)
+    monkeypatch.setattr(
+        get_data_freshness_tool, "build_query_market_data_use_case", lambda db: use_case
+    )
 
     result = asyncio.run(server.mcp.call_tool("get_data_freshness", {}))
 

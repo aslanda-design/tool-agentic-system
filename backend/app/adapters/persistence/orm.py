@@ -58,7 +58,9 @@ class AssetORM(Base):
     # an UPDATE to NULL the FK before deleting the parent — asset_id is
     # NOT NULL, so that default behavior fails deleting any asset that has
     # identifiers (i.e. any asset that isn't still needs_mapping).
-    identifiers: Mapped[list["AssetIdentifierORM"]] = relationship(back_populates="asset", passive_deletes=True)
+    identifiers: Mapped[list[AssetIdentifierORM]] = relationship(
+        back_populates="asset", passive_deletes=True
+    )
 
 
 class AssetIdentifierORM(Base):
@@ -68,7 +70,7 @@ class AssetIdentifierORM(Base):
     value: Mapped[str] = mapped_column(String(100), primary_key=True)
     asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"))
 
-    asset: Mapped["AssetORM"] = relationship(back_populates="identifiers")
+    asset: Mapped[AssetORM] = relationship(back_populates="identifiers")
 
     __table_args__ = (Index("ix_asset_identifiers_asset_id", "asset_id"),)
 
@@ -128,7 +130,9 @@ class TransactionORM(Base):
 class CashBalanceORM(Base):
     __tablename__ = "cash_balances"
 
-    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True
+    )
     currency: Mapped[str] = mapped_column(String(3), primary_key=True)
     amount: Mapped[float] = mapped_column(MONEY)
     as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -137,7 +141,9 @@ class CashBalanceORM(Base):
 class PriceBarORM(Base):
     __tablename__ = "prices"
 
-    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True)
+    asset_id: Mapped[int] = mapped_column(
+        ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True
+    )
     date: Mapped[date] = mapped_column(Date, primary_key=True)
     open: Mapped[float] = mapped_column(PRICE)
     high: Mapped[float] = mapped_column(PRICE)
@@ -151,7 +157,9 @@ class PriceBarORM(Base):
 class QuoteORM(Base):
     __tablename__ = "quotes"
 
-    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True)
+    asset_id: Mapped[int] = mapped_column(
+        ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True
+    )
     price: Mapped[float] = mapped_column(PRICE)
     prev_close: Mapped[float | None] = mapped_column(PRICE, nullable=True)
     currency: Mapped[str] = mapped_column(String(3))
@@ -172,7 +180,9 @@ class PositionSnapshotORM(Base):
     __tablename__ = "position_snapshots"
 
     date: Mapped[date] = mapped_column(Date, primary_key=True)
-    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True)
+    asset_id: Mapped[int] = mapped_column(
+        ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True
+    )
     quantity: Mapped[float] = mapped_column(QUANTITY)
     price: Mapped[float] = mapped_column(PRICE)
     market_value_base: Mapped[float] = mapped_column(MONEY)
@@ -218,7 +228,7 @@ class AssetResolutionORM(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    candidates: Mapped[list["ResolutionCandidateORM"]] = relationship(
+    candidates: Mapped[list[ResolutionCandidateORM]] = relationship(
         back_populates="resolution", passive_deletes=True
     )
 
@@ -229,13 +239,17 @@ class ResolutionCandidateORM(Base):
     __tablename__ = "resolution_candidates"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    resolution_id: Mapped[int] = mapped_column(ForeignKey("asset_resolutions.id", ondelete="CASCADE"))
+    resolution_id: Mapped[int] = mapped_column(
+        ForeignKey("asset_resolutions.id", ondelete="CASCADE")
+    )
     symbol: Mapped[str] = mapped_column(String(40))
     name: Mapped[str] = mapped_column(String(200), default="")
     mic: Mapped[str | None] = mapped_column(String(4), nullable=True)
     currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
     asset_class: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    found_by: Mapped[str] = mapped_column(String(60))  # comma list: 'openfigi', 'yahoo_isin', 'yahoo_text', 'agent', 'user'
+    found_by: Mapped[str] = mapped_column(
+        String(60)
+    )  # comma list: 'openfigi', 'yahoo_isin', 'yahoo_text', 'agent', 'user'
     last_close: Mapped[float | None] = mapped_column(PRICE, nullable=True)
     last_trade_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     avg_volume: Mapped[float | None] = mapped_column(Numeric(28, 4), nullable=True)
@@ -244,7 +258,7 @@ class ResolutionCandidateORM(Base):
     ml_probability: Mapped[float | None] = mapped_column(Numeric(6, 5), nullable=True)
     selected: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    resolution: Mapped["AssetResolutionORM"] = relationship(back_populates="candidates")
+    resolution: Mapped[AssetResolutionORM] = relationship(back_populates="candidates")
 
     __table_args__ = (UniqueConstraint("resolution_id", "symbol"),)
 
@@ -282,7 +296,9 @@ class AiNoteORM(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     agent: Mapped[str] = mapped_column(String(40))  # 'import_reviewer' | 'weekly_report'
     scope: Mapped[str] = mapped_column(String(20))  # 'account' | 'portfolio'
-    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), nullable=True)
+    account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), nullable=True
+    )
     title: Mapped[str] = mapped_column(String(200))
     body: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
@@ -303,7 +319,9 @@ class ChatSessionORM(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
-    messages: Mapped[list["ChatMessageORM"]] = relationship(back_populates="session", passive_deletes=True)
+    messages: Mapped[list[ChatMessageORM]] = relationship(
+        back_populates="session", passive_deletes=True
+    )
 
     __table_args__ = (Index("ix_chat_sessions_updated_at", "updated_at"),)
 
@@ -377,6 +395,35 @@ class ToolIndexORM(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     __table_args__ = (
-        UniqueConstraint("server_module", "tool_name", "doc_kind", "doc_text", name="uq_tool_index_doc"),
+        UniqueConstraint(
+            "server_module", "tool_name", "doc_kind", "doc_text", name="uq_tool_index_doc"
+        ),
         Index("ix_tool_index_server_tool", "server_module", "tool_name"),
     )
+
+
+class AssetIntelCacheORM(Base):
+    """Read-through cache of one external market-intel call — see
+    plans/market_intel.md section 3.1. One row per (symbol, kind), e.g.
+    ("VWCE.DE", "news") — `payload` is the already-jsonable value this app
+    returns to a tool (a list for "news"/"filings"/"macro_news", a single
+    dict for the fused "sentiment" summary), so a cache hit needs no
+    reconstruction. Exists to respect free-tier rate limits and to avoid
+    repeat outbound calls within one chat turn's reasoning, not to build
+    history — MARKET_INTEL_CACHE_MINUTES controls how stale a row can be
+    before it's refetched.
+
+    `symbol` holds a normalized macro topic phrase, not a ticker, for kind
+    "macro_news" (Phase 3, migration 0008 widened it from String(20) to
+    String(100) for exactly this — see domain/market_intel.py's
+    MAX_TOPIC_LENGTH)."""
+
+    __tablename__ = "asset_intel_cache"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(100))
+    kind: Mapped[str] = mapped_column(String(20))  # "news" | "filings" | "sentiment" | "macro_news"
+    payload: Mapped[dict | list] = mapped_column(JSONB)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("symbol", "kind", name="uq_asset_intel_cache_symbol_kind"),)

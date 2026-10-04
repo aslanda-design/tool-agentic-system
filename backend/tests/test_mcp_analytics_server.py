@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from ai.mcp_servers.analytics import server
@@ -48,11 +48,15 @@ def test_get_concentration_returns_jsonable_result(monkeypatch):
     asset = asset_repo.create("AAPL", "Apple", AssetClass.EQUITY, "EUR")
     portfolio_repo = FakePortfolioRepo(asset_repo)
     account = portfolio_repo.get_or_create_account("ibkr", "U1", "Test", "EUR", "api")
-    portfolio_repo.upsert_holding(account.id, asset.id, D(1), D(100), "EUR", datetime.now(timezone.utc), "api")
+    portfolio_repo.upsert_holding(
+        account.id, asset.id, D(1), D(100), "EUR", datetime.now(UTC), "api"
+    )
     market_data_repo = FakeMarketDataRepo()
-    market_data_repo.upsert_quote(asset.id, D(100), None, "EUR", datetime.now(timezone.utc), "yfinance")
+    market_data_repo.upsert_quote(asset.id, D(100), None, "EUR", datetime.now(UTC), "yfinance")
     use_case = _use_case(asset_repo, portfolio_repo, market_data_repo)
-    monkeypatch.setattr(get_concentration_tool, "build_query_analytics_use_case", lambda db: use_case)
+    monkeypatch.setattr(
+        get_concentration_tool, "build_query_analytics_use_case", lambda db: use_case
+    )
 
     result = get_concentration_tool.get_concentration(top_n=5)
 
@@ -61,7 +65,9 @@ def test_get_concentration_returns_jsonable_result(monkeypatch):
 
 def test_get_currency_exposure_returns_a_list(monkeypatch):
     use_case = _use_case()
-    monkeypatch.setattr(get_currency_exposure_tool, "build_query_analytics_use_case", lambda db: use_case)
+    monkeypatch.setattr(
+        get_currency_exposure_tool, "build_query_analytics_use_case", lambda db: use_case
+    )
 
     assert get_currency_exposure_tool.get_currency_exposure() == []
 
@@ -82,15 +88,28 @@ def test_check_import_prices_flags_a_bad_trade(monkeypatch):
     portfolio_repo = FakePortfolioRepo(asset_repo)
     account = portfolio_repo.get_or_create_account("myinvestor", "acc1", "Test", "EUR", "manual")
     market_data_repo = FakeMarketDataRepo()
-    market_data_repo.upsert_bars(asset.id, [{"date": date(2026, 9, 1), "close": D(100)}], "yfinance")
+    market_data_repo.upsert_bars(
+        asset.id, [{"date": date(2026, 9, 1), "close": D(100)}], "yfinance"
+    )
     bad = Transaction(
-        id=1, account_id=account.id, asset_id=asset.id, type=TransactionType.BUY, quantity=D(1), price=D(1000),
-        fees=D(0), currency="EUR", executed_at=datetime.now(timezone.utc), trade_date=date(2026, 9, 1),
-        external_id="bad", source=AccountSource.MANUAL,
+        id=1,
+        account_id=account.id,
+        asset_id=asset.id,
+        type=TransactionType.BUY,
+        quantity=D(1),
+        price=D(1000),
+        fees=D(0),
+        currency="EUR",
+        executed_at=datetime.now(UTC),
+        trade_date=date(2026, 9, 1),
+        external_id="bad",
+        source=AccountSource.MANUAL,
     )
     portfolio_repo.add_transactions([bad])
     use_case = _use_case(asset_repo, portfolio_repo, market_data_repo)
-    monkeypatch.setattr(check_import_prices_tool, "build_query_analytics_use_case", lambda db: use_case)
+    monkeypatch.setattr(
+        check_import_prices_tool, "build_query_analytics_use_case", lambda db: use_case
+    )
 
     result = check_import_prices_tool.check_import_prices()
 
@@ -101,7 +120,9 @@ def test_check_import_prices_flags_a_bad_trade(monkeypatch):
 
 def test_check_import_prices_empty_when_nothing_looks_wrong(monkeypatch):
     use_case = _use_case()
-    monkeypatch.setattr(check_import_prices_tool, "build_query_analytics_use_case", lambda db: use_case)
+    monkeypatch.setattr(
+        check_import_prices_tool, "build_query_analytics_use_case", lambda db: use_case
+    )
 
     assert check_import_prices_tool.check_import_prices() == []
 

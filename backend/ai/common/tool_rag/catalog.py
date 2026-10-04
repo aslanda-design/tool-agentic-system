@@ -32,6 +32,7 @@ REGISTERED_SERVERS = [
     "ai.mcp_servers.analytics",
     "ai.mcp_servers.notes",
     "ai.mcp_servers.quant",
+    "ai.mcp_servers.market_intel",
 ]
 
 
@@ -70,5 +71,7 @@ async def enumerate_catalog(servers: list[str] | None = None) -> list[RawTool]:
                 )
         unknown = set(examples_by_tool) - seen_tool_names
         if unknown:
-            raise ValueError(f"{module}: examples file references unknown tool(s) {sorted(unknown)} — stale entry?")
+            raise ValueError(
+                f"{module}: examples file references unknown tool(s) {sorted(unknown)} — stale entry?"
+            )
     return raw_tools

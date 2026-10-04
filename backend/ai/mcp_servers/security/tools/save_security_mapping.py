@@ -35,7 +35,9 @@ def save_security_mapping(resolution_id: int, candidate_id: int, reason: str) ->
     try:
         use_case = build_resolve_security_use_case(db)
         try:
-            resolution = use_case.accept(resolution_id, candidate_id, decided_by="agent", note=reason)
+            resolution = use_case.accept(
+                resolution_id, candidate_id, decided_by="agent", note=reason
+            )
         except (ResolutionNotFoundError, DomainError) as exc:
             db.rollback()
             return {"error": str(exc)}

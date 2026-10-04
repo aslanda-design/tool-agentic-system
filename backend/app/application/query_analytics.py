@@ -23,7 +23,7 @@ from app.domain.analytics import (
 )
 from app.ports.repositories import AssetRepo, MarketDataRepo, PortfolioRepo
 
-ZERO = Decimal("0")
+ZERO = Decimal(0)
 DEFAULT_RETURN_PERIODS = ["1d", "1w", "1m", "ytd", "1y"]
 
 
@@ -40,7 +40,9 @@ class QueryAnalyticsUseCase:
         self.portfolio_repo = portfolio_repo
         self.market_data_repo = market_data_repo
 
-    def get_returns(self, scope: str = "portfolio", periods: list[str] | None = None) -> dict[str, Decimal | None]:
+    def get_returns(
+        self, scope: str = "portfolio", periods: list[str] | None = None
+    ) -> dict[str, Decimal | None]:
         """scope is "portfolio" or an asset_id as a string (MCP tool args
         are JSON — an int-or-literal-string union is awkward there, so this
         accepts the string form and parses it; the REST route below takes a
@@ -58,7 +60,9 @@ class QueryAnalyticsUseCase:
         understate concentration. Same asset held across multiple accounts
         is combined into one weight before scoring, since concentration
         risk doesn't care which account holds it."""
-        positions = [p for p in self.portfolio_use_case.list_positions() if p.market_value is not None]
+        positions = [
+            p for p in self.portfolio_use_case.list_positions() if p.market_value is not None
+        ]
         total = sum((p.market_value for p in positions), ZERO)
         if total == ZERO:
             return ConcentrationDTO(holdings=[], hhi=ZERO)

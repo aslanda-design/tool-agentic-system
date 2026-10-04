@@ -7,7 +7,7 @@ only for test_health.py's TestClient and the *_sql.py tests; these must not)."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from app.domain.errors import AssetConflictError, AssetNotFoundError, ResolutionNotFoundError
@@ -31,6 +31,7 @@ from app.domain.models import (
 )
 from app.domain.quant.types import QuantRunRecord
 from app.domain.tool_rag.types import RetrievalCandidate, ToolDocument, ToolKey
+from app.ports.market_intel import CachedIntel, FilingEvent, NewsItem, SentimentReading
 
 
 class FakeAssetRepo:
@@ -94,7 +95,9 @@ class FakeAssetRepo:
 
     def list_assets_with_scheme(self, scheme: IdentifierScheme) -> list[tuple[Asset, str]]:
         return [
-            (self._assets[aid], value) for (s, value), aid in self._by_identifier.items() if s == scheme
+            (self._assets[aid], value)
+            for (s, value), aid in self._by_identifier.items()
+            if s == scheme
         ]
 
     def search_local(self, query: str, limit: int = 20) -> list[Asset]:
@@ -121,7 +124,11 @@ class FakeAssetRepo:
             raise AssetNotFoundError(f"Asset {asset_id} not found")
 
         # drop this asset's other YFINANCE identifiers — one pricing listing per asset
-        for key in [k for k, v in self._by_identifier.items() if k[0] == IdentifierScheme.YFINANCE and v == asset_id]:
+        for key in [
+            k
+            for k, v in self._by_identifier.items()
+            if k[0] == IdentifierScheme.YFINANCE and v == asset_id
+        ]:
             del self._by_identifier[key]
         self._by_identifier[(IdentifierScheme.YFINANCE, yahoo_symbol)] = asset_id
 
@@ -165,7 +172,11 @@ class FakePortfolioRepo:
         self, broker_key: str, external_id: str, name: str, currency: str, source: str
     ) -> Account:
         existing = next(
-            (a for a in self._accounts.values() if a.broker_key == broker_key and a.external_id == external_id),
+            (
+                a
+                for a in self._accounts.values()
+                if a.broker_key == broker_key and a.external_id == external_id
+            ),
             None,
         )
         if existing:
@@ -223,7 +234,7 @@ class FakePortfolioRepo:
         for h in self._holdings.values():
             if account_id is not None and h.account_id != account_id:
                 continue
-            if h.quantity == Decimal("0"):
+            if h.quantity == Decimal(0):
                 continue
             account = self._accounts.get(h.account_id)
             asset = self._asset_repo.get(h.asset_id) if self._asset_repo else None
@@ -241,7 +252,9 @@ class FakePortfolioRepo:
             )
         return rows
 
-    def upsert_cash_balance(self, account_id: int, currency: str, amount: Decimal, as_of: datetime) -> None:
+    def upsert_cash_balance(
+        self, account_id: int, currency: str, amount: Decimal, as_of: datetime
+    ) -> None:
         self._cash_balances[(account_id, currency.upper())] = {
             "account_id": account_id,
             "currency": currency.upper(),
@@ -250,7 +263,11 @@ class FakePortfolioRepo:
         }
 
     def list_cash_balances(self, account_id: int | None = None) -> list[dict]:
-        return [b for b in self._cash_balances.values() if account_id is None or b["account_id"] == account_id]
+        return [
+            b
+            for b in self._cash_balances.values()
+            if account_id is None or b["account_id"] == account_id
+        ]
 
     def add_transactions(self, transactions: list[Transaction]) -> int:
         if not transactions:
@@ -316,7 +333,9 @@ class FakePortfolioRepo:
     def get_portfolio_snapshots(self, start: date, end: date) -> list:
         return []
 
-    def get_position_snapshots_totals(self, start: date, end: date, asset_ids: list[int]) -> list[dict]:
+    def get_position_snapshots_totals(
+        self, start: date, end: date, asset_ids: list[int]
+    ) -> list[dict]:
         return []
 
     def get_latest_snapshot(self):
@@ -368,7 +387,9 @@ class FakeResolutionRepo:
         for candidate in candidates:
             candidate.id = self._next_candidate_id
             self._next_candidate_id += 1
-        self._resolutions[rid] = _ResolutionRow(rid, ctx.asset_id, ctx, status, decided_by, note, scorer_version, list(candidates))
+        self._resolutions[rid] = _ResolutionRow(
+            rid, ctx.asset_id, ctx, status, decided_by, note, scorer_version, list(candidates)
+        )
         return rid
 
     def get(self, resolution_id: int) -> ResolutionDTO | None:
@@ -393,7 +414,9 @@ class FakeResolutionRepo:
                 return self.get(row.id)
         return None
 
-    def list_by_status(self, statuses: list[ResolutionStatus], limit: int = 50) -> list[ResolutionDTO]:
+    def list_by_status(
+        self, statuses: list[ResolutionStatus], limit: int = 50
+    ) -> list[ResolutionDTO]:
         matches = [row for row in self._resolutions.values() if row.status in statuses]
         return [self.get(row.id) for row in matches[:limit]]
 
@@ -404,7 +427,9 @@ class FakeResolutionRepo:
         row.candidates.append(candidate)
         return candidate.id
 
-    def set_status(self, resolution_id: int, status: ResolutionStatus, decided_by: str | None, note: str) -> None:
+    def set_status(
+        self, resolution_id: int, status: ResolutionStatus, decided_by: str | None, note: str
+    ) -> None:
         row = self._resolutions.get(resolution_id)
         if row is None:
             raise ResolutionNotFoundError(f"Resolution {resolution_id} not found")
@@ -428,7 +453,9 @@ class FakeResolutionRepo:
         raise NotImplementedError("not needed by tests using this fake yet")
 
     def list_recent(self, since, decided_by=None, limit: int = 100):
-        rows = [r for r in self._resolutions.values() if r.status is not ResolutionStatus.SUPERSEDED]
+        rows = [
+            r for r in self._resolutions.values() if r.status is not ResolutionStatus.SUPERSEDED
+        ]
         if decided_by:
             rows = [r for r in rows if r.decided_by in decided_by]
         return [self.get(r.id) for r in rows[:limit]]
@@ -445,9 +472,20 @@ class FakeMarketDataRepo:
         self._fx_rates: dict[tuple[str, str], dict[date, Decimal]] = {}
 
     def upsert_quote(
-        self, asset_id: int, price: Decimal, prev_close: Decimal | None, currency: str, as_of: datetime, source: str
+        self,
+        asset_id: int,
+        price: Decimal,
+        prev_close: Decimal | None,
+        currency: str,
+        as_of: datetime,
+        source: str,
     ) -> None:
-        self._quotes[asset_id] = {"price": price, "prev_close": prev_close, "currency": currency.upper(), "as_of": as_of}
+        self._quotes[asset_id] = {
+            "price": price,
+            "prev_close": prev_close,
+            "currency": currency.upper(),
+            "as_of": as_of,
+        }
 
     def get_quote(self, asset_id: int) -> dict | None:
         return self._quotes.get(asset_id)
@@ -481,7 +519,13 @@ class FakeMarketDataRepo:
         return rates[max(candidates)] if candidates else None
 
     def currency_pairs_in_use(self, base_currency: str) -> list[str]:
-        return sorted({base for base, quote in self._fx_rates if quote == base_currency.upper() and base != base_currency.upper()})
+        return sorted(
+            {
+                base
+                for base, quote in self._fx_rates
+                if quote == base_currency.upper() and base != base_currency.upper()
+            }
+        )
 
 
 class FakeNoteRepo:
@@ -493,16 +537,26 @@ class FakeNoteRepo:
         self._notes: dict[int, Note] = {}
         self._next_id = 1
 
-    def add(self, agent: str, scope: str, title: str, body: str, account_id: int | None = None) -> int:
+    def add(
+        self, agent: str, scope: str, title: str, body: str, account_id: int | None = None
+    ) -> int:
         note_id = self._next_id
         self._next_id += 1
         self._notes[note_id] = Note(
-            id=note_id, agent=agent, scope=scope, account_id=account_id, title=title, body=body,
-            created_at=datetime.now(timezone.utc), dismissed_at=None,
+            id=note_id,
+            agent=agent,
+            scope=scope,
+            account_id=account_id,
+            title=title,
+            body=body,
+            created_at=datetime.now(UTC),
+            dismissed_at=None,
         )
         return note_id
 
-    def list(self, scope: str | None = None, since: datetime | None = None, limit: int = 20) -> list[Note]:
+    def list(
+        self, scope: str | None = None, since: datetime | None = None, limit: int = 20
+    ) -> list[Note]:
         rows = sorted(self._notes.values(), key=lambda n: n.created_at, reverse=True)
         if scope is not None:
             rows = [n for n in rows if n.scope == scope]
@@ -513,7 +567,7 @@ class FakeNoteRepo:
     def dismiss(self, note_id: int) -> None:
         note = self._notes.get(note_id)
         if note is not None:
-            note.dismissed_at = datetime.now(timezone.utc)
+            note.dismissed_at = datetime.now(UTC)
 
 
 class FakeChatRepo:
@@ -530,8 +584,10 @@ class FakeChatRepo:
     def create_session(self, title: str = "") -> int:
         session_id = self._next_session_id
         self._next_session_id += 1
-        now = datetime.now(timezone.utc)
-        self._sessions[session_id] = ChatSession(id=session_id, title=title, created_at=now, updated_at=now)
+        now = datetime.now(UTC)
+        self._sessions[session_id] = ChatSession(
+            id=session_id, title=title, created_at=now, updated_at=now
+        )
         self._messages[session_id] = []
         return session_id
 
@@ -553,14 +609,20 @@ class FakeChatRepo:
     def touch_session(self, session_id: int, as_of: datetime | None = None) -> None:
         session = self._sessions.get(session_id)
         if session is not None:
-            session.updated_at = as_of or datetime.now(timezone.utc)
+            session.updated_at = as_of or datetime.now(UTC)
 
-    def add_message(self, session_id: int, role: str, content: str, tool_calls: list[dict] | None = None) -> int:
+    def add_message(
+        self, session_id: int, role: str, content: str, tool_calls: list[dict] | None = None
+    ) -> int:
         message_id = self._next_message_id
         self._next_message_id += 1
         message = ChatMessage(
-            id=message_id, session_id=session_id, role=role, content=content,
-            tool_calls=tool_calls, created_at=datetime.now(timezone.utc),
+            id=message_id,
+            session_id=session_id,
+            role=role,
+            content=content,
+            tool_calls=tool_calls,
+            created_at=datetime.now(UTC),
         )
         self._messages.setdefault(session_id, []).append(message)
         return message_id
@@ -582,11 +644,21 @@ class FakeQuantRunRepo:
         run_id = self._next_id
         self._next_id += 1
         stored = QuantRunRecord(
-            id=run_id, asset_id=record.asset_id, model_key=record.model_key, split_date=record.split_date,
-            horizon_days=record.horizon_days, n_paths=record.n_paths, seed=record.seed, params=record.params,
-            calibration_params=record.calibration_params, calibration_diagnostics=record.calibration_diagnostics,
-            percentiles=record.percentiles, backtest=record.backtest, created_by=record.created_by,
-            note=record.note, created_at=record.created_at,
+            id=run_id,
+            asset_id=record.asset_id,
+            model_key=record.model_key,
+            split_date=record.split_date,
+            horizon_days=record.horizon_days,
+            n_paths=record.n_paths,
+            seed=record.seed,
+            params=record.params,
+            calibration_params=record.calibration_params,
+            calibration_diagnostics=record.calibration_diagnostics,
+            percentiles=record.percentiles,
+            backtest=record.backtest,
+            created_by=record.created_by,
+            note=record.note,
+            created_at=record.created_at,
         )
         self._runs[run_id] = stored
         return run_id
@@ -596,7 +668,9 @@ class FakeQuantRunRepo:
 
     def list_for_asset(self, asset_id: int, limit: int = 20) -> list[QuantRunRecord]:
         rows = sorted(
-            (r for r in self._runs.values() if r.asset_id == asset_id), key=lambda r: r.created_at, reverse=True
+            (r for r in self._runs.values() if r.asset_id == asset_id),
+            key=lambda r: r.created_at,
+            reverse=True,
         )
         return rows[:limit]
 
@@ -671,11 +745,15 @@ class FakeToolIndexRepo:
             del self._rows[key]
         return len(stale)
 
-    def _best_per_tool(self, scored: list[tuple[ToolKey, float, str, int]], limit: int) -> list[RetrievalCandidate]:
+    def _best_per_tool(
+        self, scored: list[tuple[ToolKey, float, str, int]], limit: int
+    ) -> list[RetrievalCandidate]:
         best: dict[ToolKey, RetrievalCandidate] = {}
         for key, score, doc_text, token_estimate in scored:
             if key not in best or score > best[key].score:
-                best[key] = RetrievalCandidate(key=key, score=score, doc_text=doc_text, token_estimate=token_estimate)
+                best[key] = RetrievalCandidate(
+                    key=key, score=score, doc_text=doc_text, token_estimate=token_estimate
+                )
         return sorted(best.values(), key=lambda c: c.score, reverse=True)[:limit]
 
     def dense_search(
@@ -710,3 +788,64 @@ class FakeToolIndexRepo:
             score = len(overlap) / len(query_words)
             scored.append(((module, name), score, row["doc_text"], row["token_estimate"]))
         return self._best_per_tool(scored, limit)
+
+
+class FakeAssetIntelCacheRepo:
+    """In-memory AssetIntelCacheRepo — see module docstring. Backs
+    GetAssetIntelUseCase's tests (plans/market_intel.md)."""
+
+    def __init__(self) -> None:
+        self._rows: dict[tuple[str, str], CachedIntel] = {}
+
+    def get(self, symbol: str, kind: str) -> CachedIntel | None:
+        return self._rows.get((symbol, kind))
+
+    def put(self, symbol: str, kind: str, payload: dict | list[dict]) -> None:
+        self._rows[(symbol, kind)] = CachedIntel(payload=payload, fetched_at=datetime.now(UTC))
+
+
+class FakeNewsPort:
+    """Hand-supplied NewsPort — see module docstring. `by_symbol` maps a
+    symbol to either a list[NewsItem] or None (source failure), the same
+    fail-soft contract YFinanceNewsAdapter implements."""
+
+    def __init__(self, by_symbol: dict[str, list[NewsItem] | None] | None = None) -> None:
+        self._by_symbol = by_symbol or {}
+
+    def get_headlines(self, symbol: str) -> list[NewsItem] | None:
+        return self._by_symbol.get(symbol, [])
+
+
+class FakeFilingsPort:
+    """Hand-supplied FilingsPort — see module docstring. Same shape as
+    FakeNewsPort, for SecEdgarAdapter's contract."""
+
+    def __init__(self, by_symbol: dict[str, list[FilingEvent] | None] | None = None) -> None:
+        self._by_symbol = by_symbol or {}
+
+    def get_filings(self, symbol: str) -> list[FilingEvent] | None:
+        return self._by_symbol.get(symbol, [])
+
+
+class FakeSentimentPort:
+    """Hand-supplied SentimentPort — see module docstring. One instance
+    stands in for one source (Finnhub or StockTwits); GetAssetIntelUseCase
+    takes a list of these, per plans/market_intel.md section 6."""
+
+    def __init__(self, by_symbol: dict[str, SentimentReading | None] | None = None) -> None:
+        self._by_symbol = by_symbol or {}
+
+    def get_sentiment(self, symbol: str) -> SentimentReading | None:
+        return self._by_symbol.get(symbol)
+
+
+class FakeMacroNewsPort:
+    """Hand-supplied MacroNewsPort — see module docstring. Same shape as
+    FakeNewsPort, keyed by topic instead of symbol, for GdeltAdapter's
+    contract."""
+
+    def __init__(self, by_topic: dict[str, list[NewsItem] | None] | None = None) -> None:
+        self._by_topic = by_topic or {}
+
+    def get_headlines(self, topic: str) -> list[NewsItem] | None:
+        return self._by_topic.get(topic, [])

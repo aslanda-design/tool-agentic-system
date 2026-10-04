@@ -20,7 +20,12 @@ class _FakeSession:
         return {}
 
     async def tool_schemas(self):
-        return [{"type": "function", "function": {"name": "get_portfolio_summary", "description": "", "parameters": {}}}]
+        return [
+            {
+                "type": "function",
+                "function": {"name": "get_portfolio_summary", "description": "", "parameters": {}},
+            }
+        ]
 
 
 def _patch_mcp_servers(monkeypatch) -> None:
@@ -51,10 +56,14 @@ def test_send_message_persists_user_message_and_reply(monkeypatch):
     _patch_mcp_servers(monkeypatch)
     _patch_repos(monkeypatch, chat_repo, resolution_repo)
     monkeypatch.setattr(
-        agent_module, "run_agent", _fake_run_agent(AgentRunResult(status="REPLIED", steps=1, final_message="€15,744."))
+        agent_module,
+        "run_agent",
+        _fake_run_agent(AgentRunResult(status="REPLIED", steps=1, final_message="€15,744.")),
     )
 
-    result = agent_module.PortfolioAssistantAgent().send_message(session_id, "what's my total value?")
+    result = agent_module.PortfolioAssistantAgent().send_message(
+        session_id, "what's my total value?"
+    )
 
     assert result.status == "REPLIED"
     messages = chat_repo.list_messages(session_id)
@@ -68,7 +77,11 @@ def test_first_turn_auto_titles_the_session(monkeypatch):
     session_id = chat_repo.create_session()  # title == ""
     _patch_mcp_servers(monkeypatch)
     _patch_repos(monkeypatch, chat_repo, resolution_repo)
-    monkeypatch.setattr(agent_module, "run_agent", _fake_run_agent(AgentRunResult(status="REPLIED", steps=1, final_message="ok")))
+    monkeypatch.setattr(
+        agent_module,
+        "run_agent",
+        _fake_run_agent(AgentRunResult(status="REPLIED", steps=1, final_message="ok")),
+    )
 
     agent_module.PortfolioAssistantAgent().send_message(session_id, "what's my currency exposure?")
 
@@ -83,9 +96,15 @@ def test_second_turn_does_not_rename_the_session(monkeypatch):
     chat_repo.rename_session(session_id, "first question")
     _patch_mcp_servers(monkeypatch)
     _patch_repos(monkeypatch, chat_repo, resolution_repo)
-    monkeypatch.setattr(agent_module, "run_agent", _fake_run_agent(AgentRunResult(status="REPLIED", steps=1, final_message="ok")))
+    monkeypatch.setattr(
+        agent_module,
+        "run_agent",
+        _fake_run_agent(AgentRunResult(status="REPLIED", steps=1, final_message="ok")),
+    )
 
-    agent_module.PortfolioAssistantAgent().send_message(session_id, "a completely different second question")
+    agent_module.PortfolioAssistantAgent().send_message(
+        session_id, "a completely different second question"
+    )
 
     assert chat_repo.get_session(session_id).title == "first question"
 
@@ -99,7 +118,9 @@ def test_session_memory_is_loaded_and_passed_to_run_agent(monkeypatch):
     _patch_repos(monkeypatch, chat_repo, resolution_repo)
     captured: list[dict] = []
     monkeypatch.setattr(
-        agent_module, "run_agent", _fake_run_agent(AgentRunResult(status="REPLIED", steps=1, final_message="ok"), captured)
+        agent_module,
+        "run_agent",
+        _fake_run_agent(AgentRunResult(status="REPLIED", steps=1, final_message="ok"), captured),
     )
 
     agent_module.PortfolioAssistantAgent().send_message(session_id, "and my P&L?")
@@ -119,7 +140,9 @@ def test_fresh_session_has_no_history(monkeypatch):
     _patch_repos(monkeypatch, chat_repo, resolution_repo)
     captured: list[dict] = []
     monkeypatch.setattr(
-        agent_module, "run_agent", _fake_run_agent(AgentRunResult(status="REPLIED", steps=1, final_message="ok"), captured)
+        agent_module,
+        "run_agent",
+        _fake_run_agent(AgentRunResult(status="REPLIED", steps=1, final_message="ok"), captured),
     )
 
     agent_module.PortfolioAssistantAgent().send_message(session_id, "hi")
@@ -132,7 +155,11 @@ def test_records_an_audit_trail_row_with_no_resolution_id(monkeypatch):
     session_id = chat_repo.create_session()
     _patch_mcp_servers(monkeypatch)
     _patch_repos(monkeypatch, chat_repo, resolution_repo)
-    monkeypatch.setattr(agent_module, "run_agent", _fake_run_agent(AgentRunResult(status="REPLIED", steps=1, final_message="ok")))
+    monkeypatch.setattr(
+        agent_module,
+        "run_agent",
+        _fake_run_agent(AgentRunResult(status="REPLIED", steps=1, final_message="ok")),
+    )
 
     agent_module.PortfolioAssistantAgent().send_message(session_id, "hi")
 
@@ -146,9 +173,13 @@ def test_writes_a_fallback_reply_on_max_steps(monkeypatch):
     session_id = chat_repo.create_session()
     _patch_mcp_servers(monkeypatch)
     _patch_repos(monkeypatch, chat_repo, resolution_repo)
-    monkeypatch.setattr(agent_module, "run_agent", _fake_run_agent(AgentRunResult(status="MAX_STEPS", steps=8)))
+    monkeypatch.setattr(
+        agent_module, "run_agent", _fake_run_agent(AgentRunResult(status="MAX_STEPS", steps=8))
+    )
 
-    result = agent_module.PortfolioAssistantAgent().send_message(session_id, "a very complicated question")
+    result = agent_module.PortfolioAssistantAgent().send_message(
+        session_id, "a very complicated question"
+    )
 
     assert result.status == "MAX_STEPS"
     messages = chat_repo.list_messages(session_id)
@@ -197,7 +228,7 @@ def test_writes_a_fallback_reply_on_unexpected_error(monkeypatch):
 # --- pure helpers ---------------------------------------------------------
 
 
-def test_select_tools_returns_the_fixed_allowlist_across_four_servers():
+def test_select_tools_returns_the_fixed_allowlist_across_five_servers():
     # TOOL_RAG_ENABLED defaults to false — _select_tools returns SERVERS
     # unchanged and no retrieval trace, without touching the retriever,
     # an embedding model, or the database (plans/tool_rag.md section 1.1).
@@ -209,9 +240,19 @@ def test_select_tools_returns_the_fixed_allowlist_across_four_servers():
         "ai.mcp_servers.market_data",
         "ai.mcp_servers.analytics",
         "ai.mcp_servers.quant",
+        "ai.mcp_servers.market_intel",
     }
     assert "get_portfolio_summary" in servers["ai.mcp_servers.portfolio"]
     assert servers["ai.mcp_servers.quant"] == {"list_models", "recommend_model", "explain_run"}
+    # plans/market_intel.md section 4 — the egress guard: only these
+    # bare-symbol tools are exposed, and MARKET_INTEL_ENABLED being off by
+    # default (each tool checks it itself) doesn't change this ceiling.
+    assert servers["ai.mcp_servers.market_intel"] == {
+        "get_asset_news",
+        "get_filing_events",
+        "get_asset_sentiment",
+        "get_macro_headlines",
+    }
 
 
 def test_auto_title_truncates_a_long_first_line():

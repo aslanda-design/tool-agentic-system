@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from app.domain.models import Transaction, TransactionType
 
-ZERO = Decimal("0")
+ZERO = Decimal(0)
 
 
 @dataclass(slots=True)
@@ -71,7 +71,9 @@ def price_return(start_price: Decimal, end_price: Decimal) -> Decimal | None:
 
 
 def solve_opening_balance(
-    recorded_transactions: list[Transaction], target_quantity: Decimal, target_avg_cost_price: Decimal
+    recorded_transactions: list[Transaction],
+    target_quantity: Decimal,
+    target_avg_cost_price: Decimal,
 ) -> tuple[Decimal, Decimal]:
     """Solve for the single opening BUY (quantity, avg_cost_price) that,
     prepended before all `recorded_transactions`, reconciles their replay to
@@ -108,7 +110,7 @@ def solve_opening_balance(
         return ZERO, ZERO
 
     quantity = opening_quantity
-    a = Decimal("1")
+    a = Decimal(1)
     b = ZERO
     for txn in ordered:
         if txn.type is TransactionType.BUY:
@@ -116,7 +118,7 @@ def solve_opening_balance(
             b += txn.quantity * txn.price + txn.fees
         elif txn.type is TransactionType.SELL:
             if quantity > ZERO:
-                factor = Decimal("1") - (txn.quantity / quantity)
+                factor = Decimal(1) - (txn.quantity / quantity)
                 a *= factor
                 b *= factor
             quantity -= txn.quantity

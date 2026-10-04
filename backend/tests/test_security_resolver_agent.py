@@ -69,7 +69,9 @@ def test_flags_for_review_when_the_loop_returns_max_steps(monkeypatch):
     resolution_id = repo.create(_ctx(), ResolutionStatus.NEEDS_AGENT, None, "", "rules-v1", [])
     _patch_container(monkeypatch, repo)
     _patch_mcp_server(monkeypatch, _resolution_dict(resolution_id))
-    monkeypatch.setattr(agent_module, "run_agent", _fake_run_agent(AgentRunResult(status="MAX_STEPS", steps=8)))
+    monkeypatch.setattr(
+        agent_module, "run_agent", _fake_run_agent(AgentRunResult(status="MAX_STEPS", steps=8))
+    )
 
     result = agent_module.SecurityResolverAgent().run(resolution_id)
 
@@ -107,7 +109,9 @@ def test_does_not_flag_again_when_the_loop_already_terminated(monkeypatch):
     resolution_id = repo.create(_ctx(), ResolutionStatus.NEEDS_AGENT, None, "", "rules-v1", [])
     _patch_container(monkeypatch, repo)
     _patch_mcp_server(monkeypatch, _resolution_dict(resolution_id))
-    monkeypatch.setattr(agent_module, "run_agent", _fake_run_agent(AgentRunResult(status="SAVED", steps=2)))
+    monkeypatch.setattr(
+        agent_module, "run_agent", _fake_run_agent(AgentRunResult(status="SAVED", steps=2))
+    )
 
     agent_module.SecurityResolverAgent().run(resolution_id)
 

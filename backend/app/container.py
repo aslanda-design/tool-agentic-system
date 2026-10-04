@@ -15,7 +15,13 @@ from app.adapters.embeddings.factory import build_embedding_port
 from app.adapters.market_data.fx_adapter import YFinanceFxRates
 from app.adapters.market_data.twelve_data_adapter import TwelveDataAdapter
 from app.adapters.market_data.yfinance_adapter import YFinanceMarketData
+from app.adapters.market_intel.finnhub_adapter import FinnhubSentimentAdapter
+from app.adapters.market_intel.gdelt_adapter import GdeltAdapter
+from app.adapters.market_intel.sec_edgar_adapter import SecEdgarAdapter
+from app.adapters.market_intel.stocktwits_adapter import StockTwitsSentimentAdapter
+from app.adapters.market_intel.yfinance_news_adapter import YFinanceNewsAdapter
 from app.adapters.persistence.repositories import (
+    SqlAssetIntelCacheRepo,
     SqlAssetRepo,
     SqlChatRepo,
     SqlMarketDataRepo,
@@ -29,6 +35,8 @@ from app.adapters.security_master.openfigi_adapter import OpenFigiSecurityMaster
 from app.application.asset_chart import GetAssetChartUseCase
 from app.application.backfill_quant_history import BackfillQuantHistoryUseCase
 from app.application.build_snapshots import BuildSnapshotsUseCase
+from app.application.get_asset_intel import GetAssetIntelUseCase
+from app.application.get_macro_intel import GetMacroIntelUseCase
 from app.application.import_transactions import CsvImportUseCase, ImportStatementUseCase
 from app.application.manual_entry import ManualEntryUseCase, MapAssetUseCase
 from app.application.opening_balance import SuggestOpeningBalanceUseCase
@@ -90,6 +98,10 @@ def quant_run_repo(db: Session) -> SqlQuantRunRepo:
 
 def tool_index_repo(db: Session) -> SqlToolIndexRepo:
     return SqlToolIndexRepo(db)
+
+
+def asset_intel_cache_repo(db: Session) -> SqlAssetIntelCacheRepo:
+    return SqlAssetIntelCacheRepo(db)
 
 
 def build_sync_broker_use_case(db: Session, broker_key: str) -> SyncBrokerUseCase:
@@ -224,6 +236,22 @@ def build_run_quant_simulation_use_case(db: Session) -> RunQuantSimulationUseCas
 
 def build_refresh_tool_index_use_case(db: Session) -> RefreshToolIndexUseCase:
     return RefreshToolIndexUseCase(tool_index_repo(db), build_embedding_port())
+
+
+def build_get_asset_intel_use_case(db: Session) -> GetAssetIntelUseCase:
+    return GetAssetIntelUseCase(
+        YFinanceNewsAdapter(),
+        SecEdgarAdapter(settings.sec_edgar_user_agent),
+        [FinnhubSentimentAdapter(settings.finnhub_api_key), StockTwitsSentimentAdapter()],
+        asset_intel_cache_repo(db),
+        settings.market_intel_cache_minutes,
+    )
+
+
+def build_get_macro_intel_use_case(db: Session) -> GetMacroIntelUseCase:
+    return GetMacroIntelUseCase(
+        GdeltAdapter(), asset_intel_cache_repo(db), settings.market_intel_cache_minutes
+    )
 
 
 def build_retrieve_tools_use_case(db: Session) -> RetrieveToolsUseCase:

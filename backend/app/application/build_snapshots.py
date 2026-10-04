@@ -34,7 +34,7 @@ from app.domain.models import Transaction, TransactionType
 from app.domain.returns import CostBasisState
 from app.ports.repositories import AssetRepo, MarketDataRepo, PortfolioRepo
 
-ZERO = Decimal("0")
+ZERO = Decimal(0)
 
 
 class BuildSnapshotsUseCase:
@@ -107,7 +107,12 @@ class BuildSnapshotsUseCase:
             # "net_invested" here IS the cost basis of open positions — see
             # the module docstring for why this replaced a deposit-based calc.
             self.portfolio_repo.upsert_portfolio_snapshot(
-                current, self.base_currency, market_value_base, cost_basis_base, cost_basis_base, cash_base
+                current,
+                self.base_currency,
+                market_value_base,
+                cost_basis_base,
+                cost_basis_base,
+                cash_base,
             )
             days_written += 1
             current += timedelta(days=1)
@@ -117,9 +122,9 @@ class BuildSnapshotsUseCase:
     def _rate_to_base(self, currency: str, on_date: date) -> Decimal:
         currency = currency.upper()
         if currency == self.base_currency:
-            return Decimal("1")
+            return Decimal(1)
         rate = self.market_data_repo.get_fx_rate(currency, self.base_currency, on_date)
-        return rate if rate is not None else Decimal("1")
+        return rate if rate is not None else Decimal(1)
 
     @staticmethod
     def _cash_impact(txn: Transaction) -> Decimal:
@@ -130,6 +135,10 @@ class BuildSnapshotsUseCase:
             return amount - txn.fees
         if txn.type is TransactionType.FEE or txn.type is TransactionType.WITHDRAWAL:
             return -amount
-        if txn.type in (TransactionType.DIVIDEND, TransactionType.INTEREST, TransactionType.DEPOSIT):
+        if txn.type in (
+            TransactionType.DIVIDEND,
+            TransactionType.INTEREST,
+            TransactionType.DEPOSIT,
+        ):
             return amount
         return ZERO  # SPLIT: no cash effect

@@ -89,4 +89,6 @@ class RerankPort(Protocol):
     so RetrieveToolsUseCase's constructor shape doesn't need to change
     when it lands."""
 
-    def rerank(self, query: str, candidates: list[RetrievalCandidate]) -> list[RetrievalCandidate]: ...
+    def rerank(
+        self, query: str, candidates: list[RetrievalCandidate]
+    ) -> list[RetrievalCandidate]: ...

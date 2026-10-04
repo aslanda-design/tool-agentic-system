@@ -10,7 +10,7 @@ symbol) a locally-tracked asset corresponds to, for assets flagged
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from app.domain.errors import ListingNotFoundError
@@ -41,7 +41,13 @@ class ManualEntryUseCase:
     ) -> None:
         asset = resolve_asset(self.asset_repo, symbol, name, currency, isin=isin)
         self.portfolio_repo.upsert_holding(
-            account_id, asset.id, quantity, avg_cost_price, currency, datetime.now(timezone.utc), AccountSource.MANUAL
+            account_id,
+            asset.id,
+            quantity,
+            avg_cost_price,
+            currency,
+            datetime.now(UTC),
+            AccountSource.MANUAL,
         )
 
     def add_transaction(
@@ -68,7 +74,7 @@ class ManualEntryUseCase:
             price=price,
             fees=fees,
             currency=currency,
-            executed_at=datetime.combine(executed_at, datetime.min.time(), tzinfo=timezone.utc),
+            executed_at=datetime.combine(executed_at, datetime.min.time(), tzinfo=UTC),
             trade_date=executed_at,
             external_id=None,
             source=AccountSource.MANUAL,
@@ -157,7 +163,13 @@ class MapAssetUseCase:
 
         mic = mic_for_yahoo_symbol(yfinance_symbol)
         self.asset_repo.apply_listing(
-            asset_id, yfinance_symbol, info.currency, mic, None, None, name=resolved_display_name(info, yfinance_symbol)
+            asset_id,
+            yfinance_symbol,
+            info.currency,
+            mic,
+            None,
+            None,
+            name=resolved_display_name(info, yfinance_symbol),
         )
 
         if self.resolution_repo is None:
@@ -176,4 +188,6 @@ class MapAssetUseCase:
             candidate = Candidate(symbol=yfinance_symbol, found_by={"user"}, info=info, mic=mic)
             candidate_id = self.resolution_repo.add_candidate(resolution.id, candidate)
         self.resolution_repo.select_candidate(resolution.id, candidate_id)
-        self.resolution_repo.set_status(resolution.id, ResolutionStatus.RESOLVED_BY_USER, "user", "")
+        self.resolution_repo.set_status(
+            resolution.id, ResolutionStatus.RESOLVED_BY_USER, "user", ""
+        )

@@ -33,7 +33,9 @@ def _server_params(module: str) -> StdioServerParameters:
     # env=dict(os.environ) is required — the SDK only forwards a minimal
     # environment to the subprocess by default, which would drop
     # DATABASE_URL/OPENFIGI_API_KEY/etc (see backend/ai/AGENTS.md rule 5).
-    return StdioServerParameters(command=sys.executable, args=["-m", module], cwd=str(BACKEND_DIR), env=dict(os.environ))
+    return StdioServerParameters(
+        command=sys.executable, args=["-m", module], cwd=str(BACKEND_DIR), env=dict(os.environ)
+    )
 
 
 def _unwrap(structured: dict[str, Any] | None) -> Any:
@@ -110,12 +112,17 @@ class McpToolSession:
 
 
 @asynccontextmanager
-async def open_mcp_server(module: str, tool_names: set[str] | None = None) -> AsyncIterator[McpToolSession]:
+async def open_mcp_server(
+    module: str, tool_names: set[str] | None = None
+) -> AsyncIterator[McpToolSession]:
     """Start `python -m <module>` (e.g. "ai.mcp_servers.security") as a
     stdio MCP server subprocess, and yield a connected McpToolSession. For
     an agent that needs tools from more than one server at once, see
     `open_mcp_servers` below."""
-    async with stdio_client(_server_params(module)) as (read, write), ClientSession(read, write) as session:
+    async with (
+        stdio_client(_server_params(module)) as (read, write),
+        ClientSession(read, write) as session,
+    ):
         await session.initialize()
         yield McpToolSession(session, tool_names)
 
@@ -154,7 +161,9 @@ class MultiServerToolSession:
 
 
 @asynccontextmanager
-async def open_mcp_servers(servers: dict[str, set[str] | None]) -> AsyncIterator[MultiServerToolSession]:
+async def open_mcp_servers(
+    servers: dict[str, set[str] | None],
+) -> AsyncIterator[MultiServerToolSession]:
     """Open several MCP servers at once as one combined tool session.
 
     `servers`: {module: tool_names} — same `tool_names` meaning as
@@ -178,6 +187,8 @@ async def open_mcp_servers(servers: dict[str, set[str] | None]) -> AsyncIterator
             unfiltered = McpToolSession(session, None)
             for tool in (await session.list_tools()).tools:
                 if tool.name in dispatch:
-                    raise ValueError(f"tool name collision across servers: {tool.name!r} (in {module!r})")
+                    raise ValueError(
+                        f"tool name collision across servers: {tool.name!r} (in {module!r})"
+                    )
                 dispatch[tool.name] = unfiltered
         yield MultiServerToolSession(exposed, dispatch)

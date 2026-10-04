@@ -12,7 +12,9 @@ from app.adapters.persistence.session import SessionLocal
 from app.container import portfolio_repo
 
 
-def list_transactions(asset_id: int | None = None, since: str | None = None, limit: int = 50) -> list[dict]:
+def list_transactions(
+    asset_id: int | None = None, since: str | None = None, limit: int = 50
+) -> list[dict]:
     """List recent transactions (buys, sells, dividends, fees, ...), most
     recent first.
 

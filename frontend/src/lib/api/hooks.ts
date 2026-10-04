@@ -294,3 +294,17 @@ export function useRunQuantSimulation() {
     },
   })
 }
+
+// --- Market Intel (see plans/market_intel.md Phase 3) ---------------------
+
+// `enabled: false` by design — this is a user-triggered, per-asset lookup
+// (plans/market_intel.md section 4.2: never a background fetch), so the
+// card calls `refetch()` itself on a button click, both for the first
+// load and for every subsequent manual refresh.
+export function useAssetMarketIntel(symbol: string) {
+  return useQuery({
+    queryKey: ['market-intel', 'assets', symbol],
+    queryFn: () => endpoints.assetMarketIntel(symbol),
+    enabled: false,
+  })
+}

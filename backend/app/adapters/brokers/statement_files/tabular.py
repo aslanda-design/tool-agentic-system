@@ -70,7 +70,9 @@ def _find_header_row(rows: list[list[str]], header_hints: set[str]) -> int:
     return -1
 
 
-def _rows_to_records(non_empty_rows: list[list[str]], header_idx: int) -> tuple[list[dict[str, str]], list[str], int]:
+def _rows_to_records(
+    non_empty_rows: list[list[str]], header_idx: int
+) -> tuple[list[dict[str, str]], list[str], int]:
     headers = [normalize_header(c) for c in non_empty_rows[header_idx]]
     rows: list[dict[str, str]] = []
     skipped = 0
@@ -100,7 +102,8 @@ def _read_csv(file_bytes: bytes, header_hints: set[str]) -> Sheet:
     if header_idx == -1:
         preview = "\n".join(delimiter.join(r) for r in non_empty_rows[:5])
         raise UnsupportedStatementFileError(
-            "Could not find a recognizable header row in this CSV. First rows seen:\n" + (preview or "(empty file)")
+            "Could not find a recognizable header row in this CSV. First rows seen:\n"
+            + (preview or "(empty file)")
         )
 
     rows, headers, skipped = _rows_to_records(non_empty_rows, header_idx)
@@ -140,7 +143,9 @@ def _read_xlsx(file_bytes: bytes, header_hints: set[str]) -> Sheet:
 
     try:
         for worksheet in workbook.worksheets:
-            raw_rows = [[_cell_to_str(c) for c in row] for row in worksheet.iter_rows(values_only=True)]
+            raw_rows = [
+                [_cell_to_str(c) for c in row] for row in worksheet.iter_rows(values_only=True)
+            ]
             non_empty_rows = [row for row in raw_rows if any(v.strip() for v in row)]
             if not non_empty_rows:
                 continue

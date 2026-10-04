@@ -344,3 +344,39 @@ export interface QuantRunSummary {
   created_at: string
   backtest: QuantBacktest | null
 }
+
+// --- Market Intel (see plans/market_intel.md Phase 3) ---------------------
+
+export interface MarketIntelHeadline {
+  title: string
+  publisher: string
+  url: string
+  published_at: string
+  source: string // "yfinance" | "finnhub" | "gdelt"
+}
+
+export interface MarketIntelFiling {
+  form_type: string // "8-K" | "4"
+  filed_at: string
+  title: string
+  url: string
+  source: string
+}
+
+export interface MarketIntelSentimentSource {
+  source: string // "finnhub" | "stocktwits"
+  label: 'bullish' | 'bearish' | 'neutral'
+  score: number // -1..1
+  sample_size: number | null
+}
+
+export interface MarketIntelSentiment {
+  agreement: 'aligned' | 'diverging' | 'single_source' | 'no_data'
+  sources: MarketIntelSentimentSource[]
+}
+
+export interface AssetMarketIntel {
+  news: MarketIntelHeadline[]
+  filings: MarketIntelFiling[]
+  sentiment: MarketIntelSentiment
+}

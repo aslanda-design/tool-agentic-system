@@ -20,7 +20,7 @@ from decimal import Decimal
 from app.domain.returns import solve_opening_balance
 from app.ports.repositories import PortfolioRepo
 
-ZERO = Decimal("0")
+ZERO = Decimal(0)
 
 
 @dataclass(slots=True)

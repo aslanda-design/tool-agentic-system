@@ -36,7 +36,9 @@ def upgrade() -> None:
     op.create_table(
         "asset_resolutions",
         sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("asset_id", sa.Integer(), sa.ForeignKey("assets.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "asset_id", sa.Integer(), sa.ForeignKey("assets.id", ondelete="CASCADE"), nullable=False
+        ),
         # --- context snapshot: what the broker told us at resolution time ---
         sa.Column("isin", sa.String(length=12), nullable=True),
         sa.Column("broker_key", sa.String(length=40), nullable=True),
@@ -50,7 +52,9 @@ def upgrade() -> None:
         sa.Column("decided_by", sa.String(length=10), nullable=True),
         sa.Column("note", sa.Text(), nullable=False, server_default=""),
         sa.Column("scorer_version", sa.String(length=20), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
         sa.Column("decided_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -66,7 +70,10 @@ def upgrade() -> None:
         "resolution_candidates",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column(
-            "resolution_id", sa.Integer(), sa.ForeignKey("asset_resolutions.id", ondelete="CASCADE"), nullable=False
+            "resolution_id",
+            sa.Integer(),
+            sa.ForeignKey("asset_resolutions.id", ondelete="CASCADE"),
+            nullable=False,
         ),
         sa.Column("symbol", sa.String(length=40), nullable=False),
         sa.Column("name", sa.String(length=200), nullable=False, server_default=""),
@@ -105,7 +112,9 @@ def upgrade() -> None:
         sa.Column("completion_tokens", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("duration_ms", sa.Integer(), nullable=False),
         sa.Column("error", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
 

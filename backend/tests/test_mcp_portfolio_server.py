@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from ai.mcp_servers.portfolio import server
@@ -41,13 +41,18 @@ D = Decimal
 def _use_case(asset_repo=None, portfolio_repo=None, market_data_repo=None) -> QueryPortfolioUseCase:
     asset_repo = asset_repo or FakeAssetRepo()
     return QueryPortfolioUseCase(
-        portfolio_repo or FakePortfolioRepo(asset_repo), market_data_repo or FakeMarketDataRepo(), asset_repo, "EUR"
+        portfolio_repo or FakePortfolioRepo(asset_repo),
+        market_data_repo or FakeMarketDataRepo(),
+        asset_repo,
+        "EUR",
     )
 
 
 def test_get_portfolio_summary_returns_jsonable_dto(monkeypatch):
     use_case = _use_case()
-    monkeypatch.setattr(get_portfolio_summary_tool, "build_query_portfolio_use_case", lambda db: use_case)
+    monkeypatch.setattr(
+        get_portfolio_summary_tool, "build_query_portfolio_use_case", lambda db: use_case
+    )
 
     result = get_portfolio_summary_tool.get_portfolio_summary()
 
@@ -60,7 +65,9 @@ def test_list_positions_serializes_decimals(monkeypatch):
     asset = asset_repo.create("AAPL", "Apple", AssetClass.EQUITY, "EUR")
     portfolio_repo = FakePortfolioRepo(asset_repo)
     account = portfolio_repo.get_or_create_account("ibkr", "U1", "Test", "EUR", "api")
-    portfolio_repo.upsert_holding(account.id, asset.id, D(1), D(100), "EUR", datetime.now(timezone.utc), "api")
+    portfolio_repo.upsert_holding(
+        account.id, asset.id, D(1), D(100), "EUR", datetime.now(UTC), "api"
+    )
     use_case = _use_case(asset_repo, portfolio_repo)
     monkeypatch.setattr(list_positions_tool, "build_query_portfolio_use_case", lambda db: use_case)
 
@@ -76,9 +83,11 @@ def test_get_allocation_groups_by_the_given_dimension(monkeypatch):
     asset = asset_repo.create("AAPL", "Apple", AssetClass.EQUITY, "USD")
     portfolio_repo = FakePortfolioRepo(asset_repo)
     account = portfolio_repo.get_or_create_account("ibkr", "U1", "Test", "USD", "api")
-    portfolio_repo.upsert_holding(account.id, asset.id, D(1), D(100), "USD", datetime.now(timezone.utc), "api")
+    portfolio_repo.upsert_holding(
+        account.id, asset.id, D(1), D(100), "USD", datetime.now(UTC), "api"
+    )
     market_data_repo = FakeMarketDataRepo()
-    market_data_repo.upsert_quote(asset.id, D(150), None, "USD", datetime.now(timezone.utc), "yfinance")
+    market_data_repo.upsert_quote(asset.id, D(150), None, "USD", datetime.now(UTC), "yfinance")
     use_case = _use_case(asset_repo, portfolio_repo, market_data_repo)
     monkeypatch.setattr(get_allocation_tool, "build_query_portfolio_use_case", lambda db: use_case)
 
@@ -89,7 +98,9 @@ def test_get_allocation_groups_by_the_given_dimension(monkeypatch):
 
 def test_get_value_history_returns_a_list(monkeypatch):
     use_case = _use_case()
-    monkeypatch.setattr(get_value_history_tool, "build_query_portfolio_use_case", lambda db: use_case)
+    monkeypatch.setattr(
+        get_value_history_tool, "build_query_portfolio_use_case", lambda db: use_case
+    )
 
     assert get_value_history_tool.get_value_history(range="1Y") == []
 
@@ -98,14 +109,32 @@ def test_list_transactions_orders_most_recent_first_and_respects_limit(monkeypat
     portfolio_repo = FakePortfolioRepo()
     account = portfolio_repo.get_or_create_account("ibkr", "U1", "Test", "EUR", "api")
     older = Transaction(
-        id=None, account_id=account.id, asset_id=1, type=TransactionType.BUY, quantity=D(1), price=D(10),
-        fees=D(0), currency="EUR", executed_at=datetime(2026, 1, 1, tzinfo=timezone.utc), trade_date=date(2026, 1, 1),
-        external_id="a", source=AccountSource.API,
+        id=None,
+        account_id=account.id,
+        asset_id=1,
+        type=TransactionType.BUY,
+        quantity=D(1),
+        price=D(10),
+        fees=D(0),
+        currency="EUR",
+        executed_at=datetime(2026, 1, 1, tzinfo=UTC),
+        trade_date=date(2026, 1, 1),
+        external_id="a",
+        source=AccountSource.API,
     )
     newer = Transaction(
-        id=None, account_id=account.id, asset_id=1, type=TransactionType.BUY, quantity=D(1), price=D(10),
-        fees=D(0), currency="EUR", executed_at=datetime(2026, 6, 1, tzinfo=timezone.utc), trade_date=date(2026, 6, 1),
-        external_id="b", source=AccountSource.API,
+        id=None,
+        account_id=account.id,
+        asset_id=1,
+        type=TransactionType.BUY,
+        quantity=D(1),
+        price=D(10),
+        fees=D(0),
+        currency="EUR",
+        executed_at=datetime(2026, 6, 1, tzinfo=UTC),
+        trade_date=date(2026, 6, 1),
+        external_id="b",
+        source=AccountSource.API,
     )
     portfolio_repo.add_transactions([older, newer])
     monkeypatch.setattr(list_transactions_tool, "portfolio_repo", lambda db: portfolio_repo)
@@ -123,7 +152,16 @@ def test_list_accounts_returns_jsonable_accounts(monkeypatch):
 
     result = list_accounts_tool.list_accounts()
 
-    assert result == [{"id": 1, "broker_key": "myinvestor", "external_id": "acc1", "name": "MyInvestor", "currency": "EUR", "source": "manual"}]
+    assert result == [
+        {
+            "id": 1,
+            "broker_key": "myinvestor",
+            "external_id": "acc1",
+            "name": "MyInvestor",
+            "currency": "EUR",
+            "source": "manual",
+        }
+    ]
 
 
 def test_server_registers_all_six_tools():
@@ -140,7 +178,9 @@ def test_server_registers_all_six_tools():
 
 def test_server_call_tool_round_trips_through_the_registered_function(monkeypatch):
     use_case = _use_case()
-    monkeypatch.setattr(get_portfolio_summary_tool, "build_query_portfolio_use_case", lambda db: use_case)
+    monkeypatch.setattr(
+        get_portfolio_summary_tool, "build_query_portfolio_use_case", lambda db: use_case
+    )
 
     result = asyncio.run(server.mcp.call_tool("get_portfolio_summary", {}))
 

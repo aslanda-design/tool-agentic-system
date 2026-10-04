@@ -29,6 +29,13 @@ def save_note(agent: str, scope: str, title: str, body: str, account_id: int | N
     try:
         note_id = note_repo(db).add(agent, scope, title, body, account_id)
         db.commit()
-        return {"id": note_id, "agent": agent, "scope": scope, "account_id": account_id, "title": title, "body": body}
+        return {
+            "id": note_id,
+            "agent": agent,
+            "scope": scope,
+            "account_id": account_id,
+            "title": title,
+            "body": body,
+        }
     finally:
         db.close()

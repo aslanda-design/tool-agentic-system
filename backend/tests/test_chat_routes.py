@@ -59,7 +59,9 @@ def test_send_message_is_409_when_agent_disabled(monkeypatch):
         created = client.post("/api/chat/sessions", json={})
         session_id = created.json()["id"]
         try:
-            response = client.post(f"/api/chat/sessions/{session_id}/messages", json={"message": "hi"})
+            response = client.post(
+                f"/api/chat/sessions/{session_id}/messages", json={"message": "hi"}
+            )
             assert response.status_code == 409
         finally:
             _cleanup([session_id])
@@ -87,13 +89,18 @@ def test_send_message_calls_the_agent_and_returns_the_persisted_reply(monkeypatc
                 db.close()
             return AgentRunResult(status="REPLIED", steps=1, final_message="€15,744.")
 
-    monkeypatch.setattr(chat_route.container, "build_portfolio_assistant_agent", lambda: _FakeAgent())
+    monkeypatch.setattr(
+        chat_route.container, "build_portfolio_assistant_agent", lambda: _FakeAgent()
+    )
 
     with TestClient(app) as client:
         created = client.post("/api/chat/sessions", json={})
         session_id = created.json()["id"]
         try:
-            response = client.post(f"/api/chat/sessions/{session_id}/messages", json={"message": "what's my total value?"})
+            response = client.post(
+                f"/api/chat/sessions/{session_id}/messages",
+                json={"message": "what's my total value?"},
+            )
             assert response.status_code == 201
             body = response.json()
             assert body["status"] == "REPLIED"

@@ -28,7 +28,9 @@ def _listing_info_from_dict(data: dict | None) -> ListingInfo | None:
         currency=data.get("currency"),
         quote_type=data.get("quote_type"),
         last_close=Decimal(str(data["last_close"])) if data.get("last_close") is not None else None,
-        last_trade_date=date.fromisoformat(data["last_trade_date"]) if data.get("last_trade_date") else None,
+        last_trade_date=date.fromisoformat(data["last_trade_date"])
+        if data.get("last_trade_date")
+        else None,
         avg_volume=Decimal(str(data["avg_volume"])) if data.get("avg_volume") is not None else None,
     )
 
@@ -64,10 +66,20 @@ class ReplaySession:
         self.case = case
         self.resolution = case["resolution"]
         self.ctx = ResolutionContext(**self.resolution["context"])
-        self.candidates: list[Candidate] = [_candidate_from_dict(c) for c in self.resolution["candidates"]]
+        self.candidates: list[Candidate] = [
+            _candidate_from_dict(c) for c in self.resolution["candidates"]
+        ]
         self._next_candidate_id = max((c.id or 0 for c in self.candidates), default=0) + 1
         self.fixtures: dict[str, dict] = case.get("tool_fixtures", {})
         self.outcome = ReplayOutcome()
+        # Freshness scoring (score_candidates' has_recent_price gate) is
+        # relative to "today" — every case's fixture dates were authored
+        # relative to a fixed point, not to whenever the case happens to be
+        # replayed. Without an explicit anchor here, every case silently
+        # rots once real wall-clock time drifts more than STALE_AFTER_DAYS
+        # past that point — the exact bug this field prevents. Falls back to
+        # date.today() only for a case file that predates this field.
+        self.as_of: date = date.fromisoformat(case["as_of"]) if case.get("as_of") else date.today()
 
     def get_resolution_dict(self) -> dict:
         """A get_resolution-shaped dict for the first user message — see
@@ -97,23 +109,31 @@ class ReplaySession:
         if any(c.symbol == symbol for c in self.candidates):
             return {"error": f"{symbol!r} is already a candidate on this resolution"}
         info = _listing_info_from_dict(self._tool_validate_listing(symbol))
-        candidate = Candidate(symbol=symbol, found_by={"agent"}, info=info, id=self._next_candidate_id)
+        candidate = Candidate(
+            symbol=symbol, found_by={"agent"}, info=info, id=self._next_candidate_id
+        )
         self._next_candidate_id += 1
-        score_candidates(self.ctx, [*self.candidates, candidate], today=date.today())
+        score_candidates(self.ctx, [*self.candidates, candidate], today=self.as_of)
         self.candidates.append(candidate)
         return to_jsonable(candidate)
 
     # --- terminal tools: enforce the same guards as accept()/flag_for_review() ---
 
-    def _tool_save_security_mapping(self, resolution_id: int, candidate_id: int, reason: str) -> dict:
+    def _tool_save_security_mapping(
+        self, resolution_id: int, candidate_id: int, reason: str
+    ) -> dict:
         candidate = next((c for c in self.candidates if c.id == candidate_id), None)
         if candidate is None:
-            return {"error": f"candidate {candidate_id} does not belong to resolution {resolution_id}"}
+            return {
+                "error": f"candidate {candidate_id} does not belong to resolution {resolution_id}"
+            }
         if not candidate.features.get("has_recent_price"):
             return {"error": f"{candidate.symbol!r} has no recent price — can't be accepted"}
         if candidate.info is None or candidate.info.currency is None:
             return {"error": f"{candidate.symbol!r} has no currency — can't be accepted"}
-        self.outcome = ReplayOutcome(final_tool="save_security_mapping", symbol=candidate.symbol, reason=reason)
+        self.outcome = ReplayOutcome(
+            final_tool="save_security_mapping", symbol=candidate.symbol, reason=reason
+        )
         return {"status": "RESOLVED_BY_AGENT"}
 
     def _tool_flag_for_review(self, resolution_id: int, reason: str) -> dict:

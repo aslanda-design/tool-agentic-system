@@ -53,11 +53,16 @@ def test_apply_listing_updates_currency_exchange_and_clears_needs_mapping(db):
 def test_apply_listing_with_a_name_renames_the_asset(db):
     repo = SqlAssetRepo(db)
     asset = repo.create(
-        symbol="test-apply-listing-name", name="IE00B3XXRP09", asset_class=AssetClass.EQUITY,
-        currency="EUR", needs_mapping=True,
+        symbol="test-apply-listing-name",
+        name="IE00B3XXRP09",
+        asset_class=AssetClass.EQUITY,
+        currency="EUR",
+        needs_mapping=True,
     )
 
-    repo.apply_listing(asset.id, "VUSA.L", "GBP", "XLON", None, None, name="Vanguard S&P 500 UCITS ETF")
+    repo.apply_listing(
+        asset.id, "VUSA.L", "GBP", "XLON", None, None, name="Vanguard S&P 500 UCITS ETF"
+    )
 
     assert repo.get(asset.id).name == "Vanguard S&P 500 UCITS ETF"
 
@@ -66,7 +71,11 @@ def test_remapping_deletes_old_yfinance_identifier_and_stale_prices(db):
     asset_repo = SqlAssetRepo(db)
     market_data_repo = SqlMarketDataRepo(db)
     asset = asset_repo.create(
-        symbol="test-apply-listing-2", name="Test", asset_class=AssetClass.EQUITY, currency="EUR", needs_mapping=True
+        symbol="test-apply-listing-2",
+        name="Test",
+        asset_class=AssetClass.EQUITY,
+        currency="EUR",
+        needs_mapping=True,
     )
     asset_repo.apply_listing(asset.id, "OLD.DE", "EUR", "XETR", None, None)
     market_data_repo.upsert_bars(
@@ -84,7 +93,9 @@ def test_remapping_deletes_old_yfinance_identifier_and_stale_prices(db):
         ],
         "yfinance",
     )
-    market_data_repo.upsert_quote(asset.id, Decimal(10), Decimal("9.9"), "EUR", datetime.now(UTC), "yfinance")
+    market_data_repo.upsert_quote(
+        asset.id, Decimal(10), Decimal("9.9"), "EUR", datetime.now(UTC), "yfinance"
+    )
     assert market_data_repo.get_bars(asset.id, date(2026, 1, 1), date(2026, 1, 1))
     assert market_data_repo.get_quote(asset.id) is not None
 
@@ -102,7 +113,11 @@ def test_reapplying_same_symbol_keeps_prices(db):
     asset_repo = SqlAssetRepo(db)
     market_data_repo = SqlMarketDataRepo(db)
     asset = asset_repo.create(
-        symbol="test-apply-listing-3", name="Test", asset_class=AssetClass.EQUITY, currency="EUR", needs_mapping=True
+        symbol="test-apply-listing-3",
+        name="Test",
+        asset_class=AssetClass.EQUITY,
+        currency="EUR",
+        needs_mapping=True,
     )
     asset_repo.apply_listing(asset.id, "SAME.DE", "EUR", "XETR", None, None)
     market_data_repo.upsert_quote(asset.id, Decimal(10), None, "EUR", datetime.now(UTC), "yfinance")
@@ -115,10 +130,18 @@ def test_reapplying_same_symbol_keeps_prices(db):
 def test_apply_listing_conflict_raises_and_does_not_partially_apply(db):
     repo = SqlAssetRepo(db)
     first = repo.create(
-        symbol="test-apply-listing-4a", name="A", asset_class=AssetClass.EQUITY, currency="EUR", needs_mapping=True
+        symbol="test-apply-listing-4a",
+        name="A",
+        asset_class=AssetClass.EQUITY,
+        currency="EUR",
+        needs_mapping=True,
     )
     second = repo.create(
-        symbol="test-apply-listing-4b", name="B", asset_class=AssetClass.EQUITY, currency="EUR", needs_mapping=True
+        symbol="test-apply-listing-4b",
+        name="B",
+        asset_class=AssetClass.EQUITY,
+        currency="EUR",
+        needs_mapping=True,
     )
     repo.apply_listing(first.id, "SHARED.L", "GBP", "XLON", None, None)
 

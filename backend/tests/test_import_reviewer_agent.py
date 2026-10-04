@@ -19,7 +19,8 @@ class _FakeMultiSession:
     def __init__(self, mispriced=None, freshness=None, pending=None) -> None:
         self._results = {
             "check_import_prices": mispriced or [],
-            "get_data_freshness": freshness or {"as_of": "2026-09-15", "stale_positions": [], "unmapped_assets": []},
+            "get_data_freshness": freshness
+            or {"as_of": "2026-09-15", "stale_positions": [], "unmapped_assets": []},
             "list_pending_resolutions": pending or [],
         }
 
@@ -27,7 +28,12 @@ class _FakeMultiSession:
         return self._results[name]
 
     async def tool_schemas(self):
-        return [{"type": "function", "function": {"name": "save_note", "description": "", "parameters": {}}}]
+        return [
+            {
+                "type": "function",
+                "function": {"name": "save_note", "description": "", "parameters": {}},
+            }
+        ]
 
 
 def _patch_mcp_servers(monkeypatch, **kwargs) -> _FakeMultiSession:
@@ -57,7 +63,9 @@ def test_records_the_run_and_writes_no_fallback_note_on_success(monkeypatch):
     note_repo, resolution_repo = FakeNoteRepo(), FakeResolutionRepo()
     _patch_mcp_servers(monkeypatch)
     _patch_repos(monkeypatch, note_repo, resolution_repo)
-    monkeypatch.setattr(agent_module, "run_agent", _fake_run_agent(AgentRunResult(status="SAVED", steps=1)))
+    monkeypatch.setattr(
+        agent_module, "run_agent", _fake_run_agent(AgentRunResult(status="SAVED", steps=1))
+    )
 
     result = agent_module.ImportReviewerAgent().run(account_id=7)
 
@@ -76,7 +84,9 @@ def test_writes_a_fallback_note_when_the_loop_hits_max_steps(monkeypatch):
     note_repo, resolution_repo = FakeNoteRepo(), FakeResolutionRepo()
     _patch_mcp_servers(monkeypatch)
     _patch_repos(monkeypatch, note_repo, resolution_repo)
-    monkeypatch.setattr(agent_module, "run_agent", _fake_run_agent(AgentRunResult(status="MAX_STEPS", steps=8)))
+    monkeypatch.setattr(
+        agent_module, "run_agent", _fake_run_agent(AgentRunResult(status="MAX_STEPS", steps=8))
+    )
 
     result = agent_module.ImportReviewerAgent().run(account_id=7)
 
@@ -131,8 +141,13 @@ def test_writes_a_fallback_note_on_unexpected_error(monkeypatch):
 def test_render_user_message_includes_every_finding():
     message = agent_module.render_user_message(
         account_id=7,
-        mispriced=[{"symbol": "IB1T", "executed_price": 6.86, "market_close": 8.01, "pct_diff": -0.143}],
-        freshness={"stale_positions": [{"symbol": "OLD", "last_price_date": None}], "unmapped_assets": [{"symbol": "NEW"}]},
+        mispriced=[
+            {"symbol": "IB1T", "executed_price": 6.86, "market_close": 8.01, "pct_diff": -0.143}
+        ],
+        freshness={
+            "stale_positions": [{"symbol": "OLD", "last_price_date": None}],
+            "unmapped_assets": [{"symbol": "NEW"}],
+        },
         pending=[{"id": 1}],
     )
 
@@ -144,7 +159,10 @@ def test_render_user_message_includes_every_finding():
 
 def test_render_user_message_says_nothing_wrong_when_everything_is_clean():
     message = agent_module.render_user_message(
-        account_id=7, mispriced=[], freshness={"stale_positions": [], "unmapped_assets": []}, pending=[],
+        account_id=7,
+        mispriced=[],
+        freshness={"stale_positions": [], "unmapped_assets": []},
+        pending=[],
     )
 
     assert "No mispriced trades found." in message

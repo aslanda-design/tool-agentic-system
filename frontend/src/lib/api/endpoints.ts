@@ -2,6 +2,7 @@ import { api } from './client'
 import type {
   Account,
   AssetDetail,
+  AssetMarketIntel,
   Bar,
   ChatSession,
   ChatSessionDetail,
@@ -153,4 +154,8 @@ export const endpoints = {
   quantRuns: (assetId: number, limit = 20) =>
     api.get<QuantRunSummary[]>(`/quant/runs?asset_id=${assetId}&limit=${limit}`),
   quantRun: (runId: number) => api.get<QuantRun>(`/quant/runs/${runId}`),
+
+  // --- Market Intel (see plans/market_intel.md Phase 3) -------------------
+
+  assetMarketIntel: (symbol: string) => api.get<AssetMarketIntel>(`/market-intel/assets/${encodeURIComponent(symbol)}`),
 }

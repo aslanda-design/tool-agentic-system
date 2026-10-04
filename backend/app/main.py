@@ -16,6 +16,7 @@ from app.api.routes import (
     imports,
     manual,
     market_data,
+    market_intel,
     notes,
     portfolio,
     positions,
@@ -94,3 +95,4 @@ app.include_router(analytics.router, prefix="/api")
 app.include_router(notes.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(quant.router, prefix="/api")
+app.include_router(market_intel.router, prefix="/api")

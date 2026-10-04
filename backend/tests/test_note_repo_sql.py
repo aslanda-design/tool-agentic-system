@@ -35,7 +35,9 @@ def test_add_and_list_round_trip(db):
 def test_list_filters_by_scope(db):
     repo = SqlNoteRepo(db)
     repo.add("weekly_report", "portfolio", "Portfolio note", "body")
-    account = SqlPortfolioRepo(db).get_or_create_account("test-notes", "acc1", "Test", "EUR", "manual")
+    account = SqlPortfolioRepo(db).get_or_create_account(
+        "test-notes", "acc1", "Test", "EUR", "manual"
+    )
     repo.add("import_reviewer", "account", "Account note", "body", account_id=account.id)
 
     portfolio_notes = repo.list(scope="portfolio")

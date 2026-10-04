@@ -38,9 +38,7 @@ frontend/.vite/
 .DS_Store
 Thumbs.db
 
-# plans
+# --- CodeGraph index (local dev tool, machine-specific) ---
+.codegraph/
+# Design/elaboration plans (local only)
 plans/
-docs/
-
-# tests
-tests/

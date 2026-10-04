@@ -4,7 +4,7 @@ plans/agentic_asset_mapping_phase7_8.md) — the use case behind the
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -16,10 +16,14 @@ from tests.fakes import FakeAssetRepo, FakeMarketDataRepo, FakePortfolioRepo
 D = Decimal
 
 
-def _use_case(asset_repo=None, portfolio_repo=None, market_data_repo=None) -> QueryMarketDataUseCase:
+def _use_case(
+    asset_repo=None, portfolio_repo=None, market_data_repo=None
+) -> QueryMarketDataUseCase:
     asset_repo = asset_repo or FakeAssetRepo()
     return QueryMarketDataUseCase(
-        asset_repo, portfolio_repo or FakePortfolioRepo(asset_repo), market_data_repo or FakeMarketDataRepo()
+        asset_repo,
+        portfolio_repo or FakePortfolioRepo(asset_repo),
+        market_data_repo or FakeMarketDataRepo(),
     )
 
 
@@ -30,7 +34,9 @@ def test_get_asset_by_id_uses_the_persisted_quote():
     asset_repo = FakeAssetRepo()
     asset = asset_repo.create("AAPL", "Apple Inc.", AssetClass.EQUITY, "USD")
     market_data_repo = FakeMarketDataRepo()
-    market_data_repo.upsert_quote(asset.id, D("230.50"), D("228.10"), "USD", datetime.now(timezone.utc), "yfinance")
+    market_data_repo.upsert_quote(
+        asset.id, D("230.50"), D("228.10"), "USD", datetime.now(UTC), "yfinance"
+    )
     use_case = _use_case(asset_repo, market_data_repo=market_data_repo)
 
     result = use_case.get_asset(asset_id=asset.id)
@@ -55,7 +61,9 @@ def test_get_asset_falls_back_to_last_price_bar_when_no_quote():
     asset_repo = FakeAssetRepo()
     asset = asset_repo.create("AAPL", "Apple Inc.", AssetClass.EQUITY, "USD")
     market_data_repo = FakeMarketDataRepo()
-    market_data_repo.upsert_bars(asset.id, [{"date": date(2026, 9, 1), "close": D("225.00")}], "yfinance")
+    market_data_repo.upsert_bars(
+        asset.id, [{"date": date(2026, 9, 1), "close": D("225.00")}], "yfinance"
+    )
     use_case = _use_case(asset_repo, market_data_repo=market_data_repo)
 
     result = use_case.get_asset(asset_id=asset.id)
@@ -87,7 +95,9 @@ def test_get_price_history_returns_bars_unchanged_when_under_max_points():
     market_data_repo.upsert_bars(asset.id, bars, "yfinance")
     use_case = _use_case(asset_repo, market_data_repo=market_data_repo)
 
-    result = use_case.get_price_history(asset.id, date(2026, 9, 1), date(2026, 9, 5), max_points=120)
+    result = use_case.get_price_history(
+        asset.id, date(2026, 9, 1), date(2026, 9, 5), max_points=120
+    )
 
     assert len(result) == 5
     assert result[0].date == date(2026, 9, 1)
@@ -136,8 +146,12 @@ def test_get_data_freshness_flags_stale_and_missing_prices():
     unmapped = asset_repo.create("UNKNOWN", "Unknown", AssetClass.OTHER, "EUR", needs_mapping=True)
     portfolio_repo = FakePortfolioRepo(asset_repo)
     account = portfolio_repo.get_or_create_account("ibkr", "U1", "Test", "USD", "api")
-    portfolio_repo.upsert_holding(account.id, fresh.id, D(1), D(100), "USD", datetime.now(timezone.utc), "api")
-    portfolio_repo.upsert_holding(account.id, stale.id, D(1), D(100), "EUR", datetime.now(timezone.utc), "api")
+    portfolio_repo.upsert_holding(
+        account.id, fresh.id, D(1), D(100), "USD", datetime.now(UTC), "api"
+    )
+    portfolio_repo.upsert_holding(
+        account.id, stale.id, D(1), D(100), "EUR", datetime.now(UTC), "api"
+    )
     market_data_repo = FakeMarketDataRepo()
     market_data_repo.upsert_bars(fresh.id, [{"date": date.today(), "close": D(100)}], "yfinance")
     market_data_repo.upsert_bars(stale.id, [{"date": date(2020, 1, 1), "close": D(50)}], "yfinance")

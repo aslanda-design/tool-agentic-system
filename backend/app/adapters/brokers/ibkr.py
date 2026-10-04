@@ -19,7 +19,14 @@ from decimal import Decimal
 from ib_async import IB
 
 from app.domain.errors import BrokerConnectionError
-from app.ports.broker import BrokerAccount, BrokerCashBalance, BrokerHolding, BrokerPort, BrokerSnapshot, BrokerTransaction
+from app.ports.broker import (
+    BrokerAccount,
+    BrokerCashBalance,
+    BrokerHolding,
+    BrokerPort,
+    BrokerSnapshot,
+    BrokerTransaction,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +40,12 @@ class IBKRAdapter(BrokerPort):
         self.client_id = client_id
 
     def fetch_snapshot(self, since: date | None = None) -> BrokerSnapshot:
-        logger.info("Connecting to TWS/IB Gateway at %s:%s (clientId=%s)", self.host, self.port, self.client_id)
+        logger.info(
+            "Connecting to TWS/IB Gateway at %s:%s (clientId=%s)",
+            self.host,
+            self.port,
+            self.client_id,
+        )
         ib = IB()
         try:
             ib.connect(self.host, self.port, clientId=self.client_id, timeout=10)
@@ -61,7 +73,9 @@ class IBKRAdapter(BrokerPort):
     def _read_snapshot(self, ib: IB) -> BrokerSnapshot:
         snapshot = BrokerSnapshot()
         for account_id in ib.managedAccounts():
-            snapshot.accounts.append(BrokerAccount(external_id=account_id, name=account_id, currency="USD"))
+            snapshot.accounts.append(
+                BrokerAccount(external_id=account_id, name=account_id, currency="USD")
+            )
 
             for item in ib.portfolio(account=account_id):
                 contract = item.contract

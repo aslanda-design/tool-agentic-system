@@ -37,11 +37,17 @@ def _cleanup_test_account():
     yield
     session = SessionLocal()
     try:
-        ids = session.execute(
-            text("SELECT id FROM accounts WHERE broker_key = 'test-myinvestor-import'")
-        ).scalars().all()
+        ids = (
+            session.execute(
+                text("SELECT id FROM accounts WHERE broker_key = 'test-myinvestor-import'")
+            )
+            .scalars()
+            .all()
+        )
         for account_id in ids:
-            session.execute(text("DELETE FROM transactions WHERE account_id = :id"), {"id": account_id})
+            session.execute(
+                text("DELETE FROM transactions WHERE account_id = :id"), {"id": account_id}
+            )
             session.execute(text("DELETE FROM holdings WHERE account_id = :id"), {"id": account_id})
             session.execute(text("DELETE FROM accounts WHERE id = :id"), {"id": account_id})
         session.commit()
@@ -53,7 +59,11 @@ def test_reimport_via_api_is_idempotent_against_real_postgres():
     with TestClient(app) as client:
         account = client.post(
             "/api/accounts",
-            json={"broker_key": "test-myinvestor-import", "name": "Test MyInvestor Import", "currency": "EUR"},
+            json={
+                "broker_key": "test-myinvestor-import",
+                "name": "Test MyInvestor Import",
+                "currency": "EUR",
+            },
         ).json()
         account_id = account["id"]
 
@@ -81,7 +91,11 @@ def test_commit_with_unmapped_required_columns_returns_422_with_string_detail():
     with TestClient(app) as client:
         account = client.post(
             "/api/accounts",
-            json={"broker_key": "test-myinvestor-import", "name": "Test MyInvestor Import", "currency": "EUR"},
+            json={
+                "broker_key": "test-myinvestor-import",
+                "name": "Test MyInvestor Import",
+                "currency": "EUR",
+            },
         ).json()
         account_id = account["id"]
 
@@ -105,12 +119,18 @@ def test_commit_never_triggers_import_reviewer_when_agent_disabled(monkeypatch):
             calls.append(account_id)
 
     monkeypatch.setattr(imports_route.settings, "agent_enabled", False)
-    monkeypatch.setattr(imports_route.container, "build_import_reviewer_agent", lambda: _TrackingAgent())
+    monkeypatch.setattr(
+        imports_route.container, "build_import_reviewer_agent", lambda: _TrackingAgent()
+    )
 
     with TestClient(app) as client:
         account = client.post(
             "/api/accounts",
-            json={"broker_key": "test-myinvestor-import", "name": "Test MyInvestor Import", "currency": "EUR"},
+            json={
+                "broker_key": "test-myinvestor-import",
+                "name": "Test MyInvestor Import",
+                "currency": "EUR",
+            },
         ).json()
         client.post(
             f"/api/imports/commit?account_id={account['id']}&format=myinvestor",
@@ -128,12 +148,18 @@ def test_commit_triggers_import_reviewer_when_agent_enabled(monkeypatch):
             calls.append(account_id)
 
     monkeypatch.setattr(imports_route.settings, "agent_enabled", True)
-    monkeypatch.setattr(imports_route.container, "build_import_reviewer_agent", lambda: _TrackingAgent())
+    monkeypatch.setattr(
+        imports_route.container, "build_import_reviewer_agent", lambda: _TrackingAgent()
+    )
 
     with TestClient(app) as client:
         account = client.post(
             "/api/accounts",
-            json={"broker_key": "test-myinvestor-import", "name": "Test MyInvestor Import", "currency": "EUR"},
+            json={
+                "broker_key": "test-myinvestor-import",
+                "name": "Test MyInvestor Import",
+                "currency": "EUR",
+            },
         ).json()
         client.post(
             f"/api/imports/commit?account_id={account['id']}&format=myinvestor",

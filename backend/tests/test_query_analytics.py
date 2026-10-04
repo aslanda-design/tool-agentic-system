@@ -7,7 +7,7 @@ positions with symbols, passing filters through to the repo)."""
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from app.application.query_analytics import QueryAnalyticsUseCase
@@ -41,16 +41,31 @@ def _setup(base_currency="EUR"):
     asset_repo = FakeAssetRepo()
     portfolio_repo = FakePortfolioRepo(asset_repo)
     market_data_repo = FakeMarketDataRepo()
-    portfolio_uc = QueryPortfolioUseCase(portfolio_repo, market_data_repo, asset_repo, base_currency)
+    portfolio_uc = QueryPortfolioUseCase(
+        portfolio_repo, market_data_repo, asset_repo, base_currency
+    )
     analytics_uc = QueryAnalyticsUseCase(portfolio_uc, asset_repo, portfolio_repo, market_data_repo)
     return asset_repo, portfolio_repo, market_data_repo, analytics_uc
 
 
-def _hold(asset_repo, portfolio_repo, market_data_repo, symbol, currency, quantity, last_price, yesterday_price):
+def _hold(
+    asset_repo,
+    portfolio_repo,
+    market_data_repo,
+    symbol,
+    currency,
+    quantity,
+    last_price,
+    yesterday_price,
+):
     asset = asset_repo.create(symbol, symbol, AssetClass.EQUITY, currency)
     account = portfolio_repo.get_or_create_account("test", symbol, "Test", currency, "api")
-    portfolio_repo.upsert_holding(account.id, asset.id, D(quantity), D(last_price), currency, datetime.now(timezone.utc), "api")
-    market_data_repo.upsert_quote(asset.id, D(last_price), None, currency, datetime.now(timezone.utc), "yfinance")
+    portfolio_repo.upsert_holding(
+        account.id, asset.id, D(quantity), D(last_price), currency, datetime.now(UTC), "api"
+    )
+    market_data_repo.upsert_quote(
+        asset.id, D(last_price), None, currency, datetime.now(UTC), "yfinance"
+    )
     market_data_repo.upsert_bars(
         asset.id,
         [{"date": YESTERDAY, "close": D(yesterday_price)}, {"date": TODAY, "close": D(last_price)}],
@@ -66,7 +81,9 @@ def test_get_returns_weights_by_market_value(monkeypatch):
     _freeze_today(monkeypatch)
     asset_repo, portfolio_repo, market_data_repo, analytics_uc = _setup()
     _hold(asset_repo, portfolio_repo, market_data_repo, "A", "EUR", 1, 100, 100)  # flat: 0% return
-    _hold(asset_repo, portfolio_repo, market_data_repo, "B", "EUR", 1, 330, 300)  # +10% return, same market value weight
+    _hold(
+        asset_repo, portfolio_repo, market_data_repo, "B", "EUR", 1, 330, 300
+    )  # +10% return, same market value weight
 
     result = analytics_uc.get_returns(scope="portfolio", periods=["1d"])
 
@@ -146,16 +163,36 @@ def test_check_import_prices_flags_and_labels_a_bad_trade():
     asset_repo, portfolio_repo, market_data_repo, analytics_uc = _setup()
     asset = asset_repo.create("FUND", "Some Fund", AssetClass.FUND, "EUR")
     account = portfolio_repo.get_or_create_account("myinvestor", "acc1", "Test", "EUR", "manual")
-    market_data_repo.upsert_bars(asset.id, [{"date": date(2026, 9, 1), "close": D(100)}], "yfinance")
+    market_data_repo.upsert_bars(
+        asset.id, [{"date": date(2026, 9, 1), "close": D(100)}], "yfinance"
+    )
     good = Transaction(
-        id=1, account_id=account.id, asset_id=asset.id, type=TransactionType.BUY, quantity=D(1), price=D(101),
-        fees=D(0), currency="EUR", executed_at=datetime.now(timezone.utc), trade_date=date(2026, 9, 1),
-        external_id="ok", source=AccountSource.MANUAL,
+        id=1,
+        account_id=account.id,
+        asset_id=asset.id,
+        type=TransactionType.BUY,
+        quantity=D(1),
+        price=D(101),
+        fees=D(0),
+        currency="EUR",
+        executed_at=datetime.now(UTC),
+        trade_date=date(2026, 9, 1),
+        external_id="ok",
+        source=AccountSource.MANUAL,
     )
     bad = Transaction(
-        id=2, account_id=account.id, asset_id=asset.id, type=TransactionType.BUY, quantity=D(1), price=D(1000),
-        fees=D(0), currency="EUR", executed_at=datetime.now(timezone.utc), trade_date=date(2026, 9, 1),
-        external_id="bad", source=AccountSource.MANUAL,
+        id=2,
+        account_id=account.id,
+        asset_id=asset.id,
+        type=TransactionType.BUY,
+        quantity=D(1),
+        price=D(1000),
+        fees=D(0),
+        currency="EUR",
+        executed_at=datetime.now(UTC),
+        trade_date=date(2026, 9, 1),
+        external_id="bad",
+        source=AccountSource.MANUAL,
     )
     portfolio_repo.add_transactions([good, bad])
 

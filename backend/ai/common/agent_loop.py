@@ -124,13 +124,17 @@ async def run_agent(
         reply = chat_client.chat(messages, tools)
         prompt_tokens += reply["prompt_tokens"]
         completion_tokens += reply["completion_tokens"]
-        messages.append({"role": "assistant", "content": reply["content"], "tool_calls": reply["tool_calls"]})
+        messages.append(
+            {"role": "assistant", "content": reply["content"], "tool_calls": reply["tool_calls"]}
+        )
 
         if not reply["tool_calls"]:
             if terminal_tools is None:
                 return finish("REPLIED", reply["content"])
             if nudged:
-                return finish("ERROR", reply["content"], error="model stopped without calling a terminal tool")
+                return finish(
+                    "ERROR", reply["content"], error="model stopped without calling a terminal tool"
+                )
             nudge = "You must finish by calling one of: " + ", ".join(sorted(terminal_tools)) + "."
             messages.append({"role": "user", "content": nudge})
             nudged = True
@@ -139,7 +143,11 @@ async def run_agent(
         for call in reply["tool_calls"]:
             name, arguments = call["name"], call["arguments"]
             call_started = time.monotonic()
-            output: Any = {"error": f"unknown tool {name!r}"} if name not in allowed_names else await call_tool(name, arguments)
+            output: Any = (
+                {"error": f"unknown tool {name!r}"}
+                if name not in allowed_names
+                else await call_tool(name, arguments)
+            )
             ok = not _is_error(output)
             calls.append(
                 {

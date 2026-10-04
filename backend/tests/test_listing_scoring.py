@@ -9,7 +9,7 @@ from decimal import Decimal
 from app.domain.listing_scoring import decide, score_candidates
 from app.domain.listings import Candidate, ListingInfo, ResolutionContext, ResolutionStatus
 
-TODAY = date(2026, 9, 14)
+TODAY = date.today()  # relative, so "fresh" fixtures never age past STALE_AFTER_DAYS
 
 
 def _ctx(**overrides) -> ResolutionContext:
@@ -186,8 +186,13 @@ def test_candidate_with_no_info_is_gated():
 
 def test_candidate_missing_currency_is_gated_even_with_recent_price():
     info = ListingInfo(
-        symbol="X.DE", name="X", currency=None, quote_type=None, last_close=Decimal(1),
-        last_trade_date=TODAY, avg_volume=None,
+        symbol="X.DE",
+        name="X",
+        currency=None,
+        quote_type=None,
+        last_close=Decimal(1),
+        last_trade_date=TODAY,
+        avg_volume=None,
     )
     c = Candidate(symbol="X.DE", found_by={"openfigi"}, info=info, mic="XETR")
     score_candidates(_ctx(), [c], today=TODAY)
@@ -199,7 +204,9 @@ def test_candidate_missing_currency_is_gated_even_with_recent_price():
 
 def test_decide_auto_accepts_a_clear_winner():
     winner = _candidate("EUNL.DE", mic="XETR", currency="EUR", avg_volume="1000")
-    loser = _candidate("IWDA.AS", mic="XAMS", currency="EUR", found_by=("openfigi",), avg_volume="1")
+    loser = _candidate(
+        "IWDA.AS", mic="XAMS", currency="EUR", found_by=("openfigi",), avg_volume="1"
+    )
     score_candidates(_ctx(), [winner, loser], today=TODAY)
 
     status, chosen, note = decide([winner, loser], agent_enabled=False)
@@ -258,7 +265,9 @@ def test_decide_needs_review_when_no_candidate_has_recent_price():
 
 
 def test_decide_ignores_stale_candidates_when_picking_the_winner():
-    stale_high_score_shape = _candidate("STALE.DE", mic="XETR", currency="EUR", last_trade_date=date(2026, 1, 1))
+    stale_high_score_shape = _candidate(
+        "STALE.DE", mic="XETR", currency="EUR", last_trade_date=date(2026, 1, 1)
+    )
     valid = _candidate("EUNL.DE", mic="XETR", currency="EUR", found_by=("openfigi",))
     score_candidates(_ctx(), [stale_high_score_shape, valid], today=TODAY)
 

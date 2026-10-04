@@ -35,7 +35,12 @@ def test_map_isin_returns_listings_from_data(monkeypatch):
                     "securityType": "ETP",
                     "shareClassFIGI": "BBG000BLNNH6",
                 },
-                {"ticker": "IWDA", "exchCode": "LN", "name": "ISHARES CORE MSCI WORLD", "securityType": "ETP"},
+                {
+                    "ticker": "IWDA",
+                    "exchCode": "LN",
+                    "name": "ISHARES CORE MSCI WORLD",
+                    "securityType": "ETP",
+                },
             ]
         }
     ]
@@ -92,7 +97,9 @@ def test_map_isin_retries_once_on_429_then_succeeds(monkeypatch):
 
 def test_map_isin_returns_none_after_second_429(monkeypatch):
     monkeypatch.setattr(
-        httpx, "post", _responses(httpx.Response(429, headers={"retry-after": "0"}), httpx.Response(429))
+        httpx,
+        "post",
+        _responses(httpx.Response(429, headers={"retry-after": "0"}), httpx.Response(429)),
     )
     monkeypatch.setattr("app.adapters.security_master.openfigi_adapter.time.sleep", lambda _s: None)
 

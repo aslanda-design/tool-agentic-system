@@ -27,7 +27,7 @@ class ManualTransactionRequest(BaseModel):
     type: str
     quantity: Decimal
     price: Decimal
-    fees: Decimal = Decimal("0")
+    fees: Decimal = Decimal(0)
     currency: str = "EUR"
     executed_at: date
     note: str = ""

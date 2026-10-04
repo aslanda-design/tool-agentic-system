@@ -47,8 +47,12 @@ def simulate(request: SimulateRequest, db: Session = Depends(get_db)):
     logger.info(
         "POST /quant/simulate: asset_id=%s model_key=%s split_date=%s horizon_days=%s "
         "n_paths=%s seed=%s",
-        request.asset_id, request.model_key, request.split_date, request.horizon_days,
-        request.n_paths, seed,
+        request.asset_id,
+        request.model_key,
+        request.split_date,
+        request.horizon_days,
+        request.n_paths,
+        seed,
     )
     try:
         result = container.build_run_quant_simulation_use_case(db).run(

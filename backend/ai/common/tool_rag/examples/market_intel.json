@@ -1,0 +1,30 @@
+{
+  "get_asset_news": {
+    "example_queries": [
+      "what's the latest news on VWCE.DE?",
+      "any recent headlines about this stock I'm looking at?",
+      "what's going on with AAPL lately?"
+    ]
+  },
+  "get_filing_events": {
+    "example_queries": [
+      "has this company filed any SEC filings recently?",
+      "any insider trading activity on this stock?",
+      "were there any 8-K filings for this ticker recently?"
+    ]
+  },
+  "get_asset_sentiment": {
+    "example_queries": [
+      "what's the market sentiment on this stock right now?",
+      "is this ticker bullish or bearish at the moment?",
+      "how do investors feel about AAPL lately?"
+    ]
+  },
+  "get_macro_headlines": {
+    "example_queries": [
+      "what's happening with European bank stocks lately?",
+      "any recent news on semiconductor export controls?",
+      "how's the news looking for the energy sector this week?"
+    ]
+  }
+}

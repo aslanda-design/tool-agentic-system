@@ -5,7 +5,7 @@ rate-limited upstream never blocks a page load."""
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 from app.domain.models import IdentifierScheme
 from app.ports.market_data import FxRatePort, MarketDataPort
@@ -44,10 +44,15 @@ class RefreshMarketDataUseCase:
             return 0
         symbol_to_asset_id = {yf_symbol: asset_id for asset_id, yf_symbol, _ in mapped}
         quotes = self.market_data.get_quotes(list(symbol_to_asset_id))
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for symbol, quote in quotes.items():
             self.market_data_repo.upsert_quote(
-                symbol_to_asset_id[symbol], quote.price, quote.prev_close, quote.currency, now, "yfinance"
+                symbol_to_asset_id[symbol],
+                quote.price,
+                quote.prev_close,
+                quote.currency,
+                now,
+                "yfinance",
             )
         return len(quotes)
 
@@ -90,7 +95,9 @@ class RefreshMarketDataUseCase:
         for currency in pairs:
             if currency == self.base_currency:
                 continue
-            rates = self.fx.get_daily_rates(currency, self.base_currency, EARLIEST_BACKFILL_DATE, today)
+            rates = self.fx.get_daily_rates(
+                currency, self.base_currency, EARLIEST_BACKFILL_DATE, today
+            )
             if not rates:
                 continue
             self.market_data_repo.upsert_fx_rates(currency, self.base_currency, rates)

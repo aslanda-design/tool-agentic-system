@@ -25,4 +25,6 @@ def build_embedding_port() -> EmbeddingPort:
             api_key=settings.tool_rag_embedding_api_key,
             dimensions=settings.tool_rag_embedding_dimensions,
         )
-    raise ValueError(f"Unknown TOOL_RAG_EMBEDDING_PROVIDER {provider!r} (expected 'ollama' or 'openai')")
+    raise ValueError(
+        f"Unknown TOOL_RAG_EMBEDDING_PROVIDER {provider!r} (expected 'ollama' or 'openai')"
+    )

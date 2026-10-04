@@ -33,7 +33,9 @@ def upgrade() -> None:
         sa.Column("exchange", sa.String(40), nullable=True),
         sa.Column("isin", sa.String(12), nullable=True, unique=True),
         sa.Column("needs_mapping", sa.Boolean, nullable=False, server_default=sa.false()),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
     )
     op.execute("CREATE INDEX ix_assets_symbol_trgm ON assets USING gin (symbol gin_trgm_ops)")
     op.execute("CREATE INDEX ix_assets_name_trgm ON assets USING gin (name gin_trgm_ops)")
@@ -42,7 +44,9 @@ def upgrade() -> None:
         "asset_identifiers",
         sa.Column("scheme", sa.String(20), primary_key=True),
         sa.Column("value", sa.String(100), primary_key=True),
-        sa.Column("asset_id", sa.Integer, sa.ForeignKey("assets.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "asset_id", sa.Integer, sa.ForeignKey("assets.id", ondelete="CASCADE"), nullable=False
+        ),
     )
     op.create_index("ix_asset_identifiers_asset_id", "asset_identifiers", ["asset_id"])
 
@@ -60,7 +64,12 @@ def upgrade() -> None:
     op.create_table(
         "holdings",
         sa.Column("id", sa.Integer, primary_key=True),
-        sa.Column("account_id", sa.Integer, sa.ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "account_id",
+            sa.Integer,
+            sa.ForeignKey("accounts.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("asset_id", sa.Integer, sa.ForeignKey("assets.id"), nullable=False),
         sa.Column("quantity", QUANTITY, nullable=False),
         sa.Column("avg_cost_price", PRICE, nullable=False),
@@ -73,7 +82,12 @@ def upgrade() -> None:
     op.create_table(
         "transactions",
         sa.Column("id", sa.Integer, primary_key=True),
-        sa.Column("account_id", sa.Integer, sa.ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "account_id",
+            sa.Integer,
+            sa.ForeignKey("accounts.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("asset_id", sa.Integer, sa.ForeignKey("assets.id"), nullable=True),
         sa.Column("type", sa.String(20), nullable=False),
         sa.Column("quantity", QUANTITY, nullable=False),
@@ -85,14 +99,23 @@ def upgrade() -> None:
         sa.Column("external_id", sa.String(100), nullable=True),
         sa.Column("source", sa.String(10), nullable=False),
         sa.Column("note", sa.Text, nullable=False, server_default=""),
-        sa.UniqueConstraint("account_id", "external_id", name="uq_transactions_account_external_id"),
+        sa.UniqueConstraint(
+            "account_id", "external_id", name="uq_transactions_account_external_id"
+        ),
     )
-    op.create_index("ix_transactions_account_trade_date", "transactions", ["account_id", "trade_date"])
+    op.create_index(
+        "ix_transactions_account_trade_date", "transactions", ["account_id", "trade_date"]
+    )
     op.create_index("ix_transactions_asset_trade_date", "transactions", ["asset_id", "trade_date"])
 
     op.create_table(
         "cash_balances",
-        sa.Column("account_id", sa.Integer, sa.ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True),
+        sa.Column(
+            "account_id",
+            sa.Integer,
+            sa.ForeignKey("accounts.id", ondelete="CASCADE"),
+            primary_key=True,
+        ),
         sa.Column("currency", sa.String(3), primary_key=True),
         sa.Column("amount", MONEY, nullable=False),
         sa.Column("as_of", sa.DateTime(timezone=True), nullable=False),
@@ -100,7 +123,9 @@ def upgrade() -> None:
 
     op.create_table(
         "prices",
-        sa.Column("asset_id", sa.Integer, sa.ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True),
+        sa.Column(
+            "asset_id", sa.Integer, sa.ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True
+        ),
         sa.Column("date", sa.Date, primary_key=True),
         sa.Column("open", PRICE, nullable=False),
         sa.Column("high", PRICE, nullable=False),
@@ -113,7 +138,9 @@ def upgrade() -> None:
 
     op.create_table(
         "quotes",
-        sa.Column("asset_id", sa.Integer, sa.ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True),
+        sa.Column(
+            "asset_id", sa.Integer, sa.ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True
+        ),
         sa.Column("price", PRICE, nullable=False),
         sa.Column("prev_close", PRICE, nullable=True),
         sa.Column("currency", sa.String(3), nullable=False),
@@ -132,7 +159,9 @@ def upgrade() -> None:
     op.create_table(
         "position_snapshots",
         sa.Column("date", sa.Date, primary_key=True),
-        sa.Column("asset_id", sa.Integer, sa.ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True),
+        sa.Column(
+            "asset_id", sa.Integer, sa.ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True
+        ),
         sa.Column("quantity", QUANTITY, nullable=False),
         sa.Column("price", PRICE, nullable=False),
         sa.Column("market_value_base", MONEY, nullable=False),
@@ -147,7 +176,9 @@ def upgrade() -> None:
         sa.Column("cost_basis", MONEY, nullable=False),
         sa.Column("net_invested", MONEY, nullable=False),
         sa.Column("cash", MONEY, nullable=False),
-        sa.Column("computed_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "computed_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
     )
 
 
