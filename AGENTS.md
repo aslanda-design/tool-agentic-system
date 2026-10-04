@@ -323,3 +323,26 @@ Paper trading port is 7497, live is 7496.
       to `backend/.env`, and the frontend's rebuilt bundle was confirmed
       to contain the new card's code. Not verified: an actual browser
       click-through (Claude in Chrome wasn't connected this session).
+
+## Multi-user SaaS migration (planned)
+
+The app is being prepared to become an EU-hosted, multi-user B2C SaaS. The
+plan is `docs/saas/00-launch-plan.md`; the how-and-why documentation is
+`docs/saas/` (start at its README); decisions are `docs/adr/0001`-`0007`;
+vocabulary is `CONTEXT.md` (**User** = login, **Brokerage Account** = broker
+side, **Private data** vs **Reference data**). Until Phase 1 lands, the
+sections above still describe the running single-user app.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues for this repo (`gh` CLI). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.

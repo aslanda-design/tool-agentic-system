@@ -1,0 +1,3 @@
+# Production uses only licensed market data; yfinance and personal-tier APIs are dev-only
+
+yfinance (Yahoo's terms: personal use), Finnhub's free tier and similar "personal / non-commercial" keys cannot back a paid product that shows prices to other people. Before public launch, a provider whose written terms cover a B2C app displaying end-of-day prices to EU consumers must be in place; FX comes from the ECB reference rates (free reuse with attribution). This is a launch blocker, not a polish item, because swapping provider later changes data shapes, symbol conventions and cost. See `docs/saas/06-market-data-licensing.md`.
